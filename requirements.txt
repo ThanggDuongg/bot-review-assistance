@@ -1,0 +1,17 @@
+langchain>=0.3.26
+langchain-community>=0.3.26
+langchain-core>=0.3.66
+langchain-text-splitters>=0.3.8
+langgraph>=0.5.0
+llama-cpp-python>=0.3.9
+faiss-cpu>=1.11.0
+sentence-transformers>=4.1.0
+langdetect>=1.0.9
+python-dotenv>=1.1.1
+streamlit>=1.46.1
+transformers>=4.53.0
+huggingface-hub>=0.33.1
+accelerate>=1.8.1
+torch>=2.7.1
+langchain-huggingface>=0.3.0
+hf_xet>=1.1.5
