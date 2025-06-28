@@ -1,19 +1,86 @@
 import streamlit as st
 from dotenv import load_dotenv
-from code_review_agent.code_review_agent import run_pipeline
+from src.code_review.pipeline.workflow import run_pipeline
 
 # Load environment variables
 load_dotenv(".env")
 
+example_diff = '''diff --git a/Services/UserService.cs b/Services/UserService.cs
+index e69de29..a3dcb23 100644
+--- a/Services/UserService.cs
++++ b/Services/UserService.cs
+@@ class UserService {
++    private readonly IUserRepository _userRepository;
++    private readonly IEmailService _emailService;
++    public UserService(IUserRepository userRepository, IEmailService emailService) {
++        _userRepository = userRepository;
++        _emailService = emailService;
++    }
++
++    public User GetUser(int id) {
++        return _userRepository.FindById(id);
++    }
++
++    public void DeleteUser(int id) {
++        _userRepository.Delete(id);
++        _emailService.SendUserDeletedNotification(id);
++    }
++
++    public List<User> GetAllUsers() {
++        return _userRepository.FindAll();
++    }
++
++    public void CreateUser(User user) {
++        _userRepository.Save(user);
++        _emailService.SendWelcomeEmail(user.Email);
++    }
+}
+
+diff --git a/Controllers/UserController.cs b/Controllers/UserController.cs
+index e69de29..b2fda34 100644
+--- a/Controllers/UserController.cs
++++ b/Controllers/UserController.cs
+@@ class UserController : Controller {
++    private readonly UserService _userService;
++    public UserController(UserService userService) {
++        _userService = userService;
++    }
++
++    [HttpGet("/user/{id}")]
++    public IActionResult GetUser(int id) {
++        var user = _userService.GetUser(id);
++        if (user == null) return NotFound();
++        return Ok(user);
++    }
++
++    [HttpDelete("/user/{id}")]
++    public IActionResult DeleteUser(int id) {
++        _userService.DeleteUser(id);
++        return NoContent();
++    }
++
++    [HttpPost("/user")]
++    public IActionResult CreateUser([FromBody] User user) {
++        _userService.CreateUser(user);
++        return Created($"/user/{user.Id}", user);
++    }
++
++    [HttpGet("/users")]
++    public IActionResult GetAllUsers() {
++        var users = _userService.GetAllUsers();
++        return Ok(users);
++    }
+}'''
+
 def main():
     """Main entry point"""
     st.set_page_config(
-        page_title="Bot Review Assistant",
+        page_title="Code Review Assistant",
         page_icon="🙈",
         layout="wide"
     )
 
-    st.title("🙈 Bot Review Assistant")
+    st.title("🙈 Code Review Assistant")
     st.markdown("---")
 
     # Sidebar
@@ -32,17 +99,7 @@ def main():
             """)
 
         st.header("Example Diff Format")
-        st.code("""
-diff --git a/example.py b/example.py
-index abc123..def456 100644
---- a/example.py
-+++ b/example.py
-@@ -1,3 +1,4 @@
- def add(a, b):
--    return a + b
-+    return a + b + 0  # ensure result is int
-        """
-                , language="diff")
+        st.code(example_diff, language="diff")
 
     # Main content area
     col1, col2 = st.columns([1, 1])

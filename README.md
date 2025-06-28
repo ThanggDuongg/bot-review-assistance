@@ -91,40 +91,74 @@ streamlit run main.py
 
 The Bot Review Assistant follows a **RAG-based architecture** with **LangGraph state graphs** for orchestrating the code review workflow. The system combines local LLM inference with vector-based retrieval for context-aware code analysis.
 
-### System Components
+### Project Structure
 
 ```
-├── code_review_agent/
-│   ├── __init__.py            # Package initialization
-│   ├── code_review_agent.py   # Main pipeline orchestrator & LangGraph workflow
-│   └── utils/
-│       ├── __init__.py        # Utils package initialization
-│       ├── llm.py             # Local LLM loading (llama-cpp-python)
-│       ├── nodes.py           # LangGraph workflow nodes
-│       ├── prompts.py         # System prompts for LLM calls
-│       ├── tools.py           # Review tools and functions
-│       └── vector_utils.py    # FAISS vector store utilities
-├── main.py                    # Streamlit UI application
-├── agent.py                   # CLI interface for testing
-├── models/
-│   ├── __init__.py            # Models package initialization
-│   ├── xxx.gguf               # Local LLM model
-│   └── xxx.gguf               # Embedding model
-├── requirements.txt           # Python dependencies
-└── .env                       # Environment configuration
+bot-assistance/
+├── src/                              # Source code
+│   └── code_review/                  # Main package
+│       ├── __init__.py               # Package exports
+│       ├── agents/                   # Specialized review agents
+│       │   ├── __init__.py
+│       │   ├── base.py               # BaseAgent class + LLM management
+│       │   ├── naming.py             # NamingAgent - naming conventions
+│       │   ├── syntax.py             # SyntaxAgent - syntax validation
+│       │   ├── logic.py              # LogicAgent - logic analysis
+│       │   └── summary.py            # SummaryAgent - feedback synthesis
+│       ├── pipeline/                 # Workflow orchestration
+│       │   ├── __init__.py
+│       │   ├── nodes.py              # LangGraph node functions
+│       │   └── workflow.py           # Main ReviewPipeline class
+│       ├── core/                     # Core utilities
+│       │   ├── __init__.py
+│       │   ├── tools.py              # Code analysis tools
+│       │   └── vector_store.py       # Vector operations
+├── models/                           # Model files only
+│   ├── DeepSeek-Coder-V2-Lite-Instruct-Q4_K_M.gguf
+│   └── all-MiniLM-L6-v2-Q4_K_M.gguf
+├── main.py                           # Streamlit web interface
+├── test_agents.py                    # Agent and pipeline tests
+├── requirements.txt                  # Dependencies
+└── README.md                         # This documentation
 ```
 
-### Workflow Architecture
+### Agent-Based Workflow
 
-The system uses **LangGraph** to orchestrate a sequential workflow with the following nodes:
+The system uses **specialized AI agents** orchestrated by **LangGraph** in a sequential workflow:
 
 1. **Language Detection** → Identifies programming language from diff
 2. **Code Chunking** → AST-based parsing and chunking of code changes
 3. **Structure Scanning** → Extracts classes, functions, variables
-4. **Naming Validation** → Checks naming conventions and patterns
-5. **Syntax Validation** → Validates syntax correctness
-6. **Logic Review** → Analyzes code logic and provides suggestions
-7. **Summary Generation** → Creates comprehensive review summary
+4. **NamingAgent** → Reviews naming conventions and patterns
+5. **SyntaxAgent** → Validates syntax correctness
+6. **LogicAgent** → Analyzes code logic and provides suggestions
+7. **SummaryAgent** → Creates comprehensive review summary
+
+### Specialized Agents
+
+#### **NamingAgent**
+- Focus on naming conventions and code clarity
+- Language-specific naming rules (camelCase, snake_case, PascalCase)
+- Boolean naming patterns (is_, has_, can_, should_)
+- Identifies unclear abbreviations and misleading names
+
+#### **SyntaxAgent**
+- Focus on syntax validation and error detection
+- Language-specific syntax rules
+- Compilation/interpretation errors
+- Missing semicolons, brackets, parentheses
+
+#### **LogicAgent**
+- Focus on logic correctness and code quality
+- Performance and security considerations
+- Code smells and anti-patterns
+- Edge cases and error scenarios
+
+#### **SummaryAgent**
+- Focus on synthesis and communication
+- Natural language summaries
+- Prioritized feedback
+- Actionable recommendations
 
 ### RAG Components
 
@@ -141,26 +175,17 @@ The system uses **LangGraph** to orchestrate a sequential workflow with the foll
 - **FAISS**: Vector similarity search
 - **HuggingFace**: Embeddings and model management
 
-## Development
-
-### Running Tests
+#### Web Interface
 ```bash
-python agent.py  # Test with sample diff
-```
-
-### Adding New Review Tools
-1. Add new tool function in `utils/tools.py`
-2. Add corresponding node in `utils/nodes.py`
-3. Update workflow graph edges
-
-## Example Diff Format
-
-```diff
-TBD
+streamlit run app.py
 ```
 
 ## TODO
-- Setup API with LangGraph platform - [docs](https://langchain-ai.github.io/langgraph/tutorials/langgraph-platform/local-server/)
-- Fix tools
-- Fix each Node
-- POC git API
+
+- [ ] Setup API with LangGraph platform - [docs](https://langchain-ai.github.io/langgraph/tutorials/langgraph-platform/local-server/)
+- [ ] Fix code all in tools, agents which currently working not as expected
+- [ ] Optimize agent system prompts based on usage patterns
+- [ ] Add more specialized agents if needed
+- [ ] Implement parallel agent processing
+- [ ] POC git API integration
+- [ ] Performance monitoring and optimization
