@@ -5,18 +5,20 @@ class MockFileFetcher:
     def __init__(self):
         self.mock_files = {
             'Backend/Controllers/ProductController.cs': '''
-using Microsoft.AspNetCore.Mvc;
-namespace Backend.Controllers {
-    public IActionResult GetProductReviews(int id) {
-        var product = _productRepository.GetById(id);
-        var reviews = new List<Review>();
-        foreach (var reviewId in product.ReviewIds) {
-            reviews.Add(_reviewRepository.GetById(reviewId));
+        using Microsoft.AspNetCore.Mvc;
+        namespace Backend.Controllers {
+            public class ProductController : Controller {
+                public IActionResult GetProductReviews(int id) {
+                    var product = _productRepository.GetById(id);
+                    var reviews = new List<Review>();
+                    foreach (var reviewId in product.ReviewIds) {
+                        reviews.Add(_reviewRepository.GetById(reviewId));
+                    }
+                    return Ok(reviews);
+                }
+            }
         }
-        return Ok(reviews);
-    }
-}
-'''.replace('// ','').strip(),
+        '''.strip(),
         }
 
     def fetch_files_parallel(self, documents: List, repo_info: Dict) -> Dict[str, str]:

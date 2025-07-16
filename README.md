@@ -52,7 +52,7 @@ cmake --version
 
 **Step 2**: Install tree-sitter-cli globally
 ```bash
-npm install -g tree-sitter-cli
+npm install -g tree-sitter-cli@0.20.8
 ```
 
 **Step 3**: Verify installation
@@ -68,7 +68,7 @@ tree-sitter --version
 ```bash
 cd bot-assistance
 python -m venv venv
-source venv/bin/activate.bat  # On Windows
+.\venv\Scripts\activate  # On Windows
 ```
 
 **Step 2**: Install dependencies
