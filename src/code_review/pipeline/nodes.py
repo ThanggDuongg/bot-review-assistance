@@ -1,8 +1,8 @@
-from typing import TypedDict, Optional, List, Any, Dict
-from langchain.schema import Document
+from typing import Optional, Any, Dict
 import os
 
 from ..agents import LogicAgent, SummaryAgent
+from ..core.schemas import ReviewState
 from ..core.tools import FileFetcher, MockFileFetcher
 from ..core.vector_store import chunk_diff
 from ..core.chunkers.chunker_factory import get_context_chunker
@@ -12,40 +12,6 @@ summary_agent = SummaryAgent()
 logic_agent = LogicAgent()
 file_fetcher = FileFetcher()
 mock_file_fetcher = MockFileFetcher()
-
-class RepoInfo(TypedDict, total=False):
-    # Required fields for Bitbucket API
-    workspace: str  # Bitbucket workspace name
-    repo: str       # Repository name
-    branch: str     # Branch name (default: 'main')
-    
-    # Optional fields for enhanced context
-    project_key: Optional[str]  # Project key (for enterprise Bitbucket)
-    commit_hash: Optional[str]  # Specific commit hash
-    pr_id: Optional[str]        # Pull request ID for context
-    
-    # Optional authentication
-    token: Optional[str]        # Custom token (overrides env var)
-    
-    # Optional metadata
-    repo_url: Optional[str]     # Full repository URL
-    description: Optional[str]  # Repository description
-
-class ReviewState(TypedDict):
-    """State definition for the review workflow."""
-    diff: str
-    repo_info: Optional[RepoInfo]
-    # Diff-based chunks
-    diff_chunks: Optional[List[Document]]
-    diff_file_paths: Optional[List[str]]
-    # File contents for AST chunking
-    file_contents: Optional[Dict[str, str]]
-    # AST chunks for review
-    ast_chunks: Optional[List[Document]]
-    # Results
-    summary_result: Optional[dict]
-    review_result: Optional[dict]
-    final_result: Optional[dict]
 
 def validate_repo_info(repo_info: Optional[Dict[str, Any]]) -> bool:
     if not repo_info:

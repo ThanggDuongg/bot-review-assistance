@@ -1,6 +1,9 @@
 from typing import List, Dict
 import time
 
+from src.code_review.core.schemas import RepoInfo
+
+
 class MockFileFetcher:
     def __init__(self):
         self.mock_files = {
@@ -21,7 +24,7 @@ class MockFileFetcher:
         '''.strip(),
         }
 
-    def fetch_files_parallel(self, documents: List, repo_info: Dict) -> Dict[str, str]:
+    def fetch_files_parallel(self, documents: List, repo_info: RepoInfo) -> Dict[str, str]:
         file_contents = {}
         time.sleep(3)  # Simulate delay for testing parallel execution
         for doc in documents:

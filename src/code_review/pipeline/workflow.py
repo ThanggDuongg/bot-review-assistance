@@ -1,15 +1,15 @@
 from langgraph.graph import StateGraph, END
 from .nodes import (
-    ReviewState, 
-    RepoInfo,
     chunk_node, 
     fetch_files_node,
     create_ast_chunks_node,
     summary_branch_node, 
-    review_branch_node,
-    combine_results_node
+    review_branch_node
 )
 from typing import Optional
+
+from ..core.schemas import ReviewState, RepoInfo
+
 
 def build_review_graph():
     graph = StateGraph(ReviewState)
