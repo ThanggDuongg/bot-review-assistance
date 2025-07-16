@@ -104,6 +104,7 @@ Always respond in valid JSON format.
                     context_key = (parent, called_name)
                     if context_key in method_lookup and method_lookup[context_key] != chunk:
                         context_methods.append(method_lookup[context_key].page_content)
+                context_methods = [m for m in context_methods if m != chunk.page_content]
                 chunk_review = self._review_single_chunk_with_context(chunk, context_methods, file_contents)
                 reviewed_hashes[content_hash] = chunk_review
             if chunk_review:
