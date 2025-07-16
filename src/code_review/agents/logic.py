@@ -79,14 +79,35 @@ Always respond in valid JSON format.
                 "total_chunks_reviewed": 0
             }
 
+        # Build method lookup for context
+        method_lookup = {}
+        for doc in chunked_documents:
+            if doc.metadata.get("chunk_type") == "function":
+                key = (doc.metadata.get("parent"), doc.metadata.get("name"))
+                method_lookup[key] = doc
+
         file_reviews = []
-        chunks_by_file = self._group_chunks_by_file(chunked_documents)
-        grouped_chunks = self._group_chunks_for_review(chunks_by_file)
-        for file_path, chunk_groups in grouped_chunks.items():
-            for group in chunk_groups:
-                file_review = self._review_file_chunks(file_path, group, file_contents)
-                if file_review:
-                    file_reviews.append(file_review)
+        reviewed_hashes = {}
+        # Only review function chunks
+        method_chunks = [doc for doc in chunked_documents if doc.metadata.get("chunk_type") == "function"]
+        for chunk in method_chunks:
+            # Deduplicate by content hash
+            content_hash = hashlib.md5(chunk.page_content.encode()).hexdigest()
+            if content_hash in reviewed_hashes:
+                chunk_review = reviewed_hashes[content_hash]
+            else:
+                # Build context methods
+                context_methods = []
+                parent = chunk.metadata.get("parent")
+                method_calls = chunk.metadata.get("method_calls", [])
+                for called_name in method_calls:
+                    context_key = (parent, called_name)
+                    if context_key in method_lookup and method_lookup[context_key] != chunk:
+                        context_methods.append(method_lookup[context_key].page_content)
+                chunk_review = self._review_single_chunk_with_context(chunk, context_methods, file_contents)
+                reviewed_hashes[content_hash] = chunk_review
+            if chunk_review:
+                file_reviews.append(chunk_review)
 
         review_objects = []
         for file_review in file_reviews:
@@ -104,57 +125,10 @@ Always respond in valid JSON format.
         return {
             "file_reviews": review_objects,
             "total_files_reviewed": len(file_reviews),
-            "total_chunks_reviewed": len(chunked_documents)
+            "total_chunks_reviewed": len(method_chunks)
         }
 
-    @staticmethod
-    def _group_chunks_by_file(chunked_documents: List[Document]) -> Dict[str, List[Document]]:
-        chunks_by_file = {}
-        for doc in chunked_documents:
-            file_path = doc.metadata.get('file_path', 'unknown')
-            if file_path not in chunks_by_file:
-                chunks_by_file[file_path] = []
-            chunks_by_file[file_path].append(doc)
-        return chunks_by_file
-
-    def _review_file_chunks(self, file_path: str, chunks: List[Document],
-                            file_contents: Dict[str, str] = None) -> Optional[Dict[str, Any]]:
-        if not chunks:
-            return None
-        all_diff_lines = []
-        chunk_reviews = []
-        for chunk in chunks:
-            chunk_review = self._review_single_chunk(chunk, file_contents)
-            if chunk_review:
-                chunk_reviews.append(chunk_review)
-                all_diff_lines.extend(chunk.metadata.get('diff_lines', []))
-        all_diff_lines = sorted(list(set(all_diff_lines)))
-        Utils.debug_print(f"[DEBUG] All diff lines: {all_diff_lines}")
-        line_feedback = self._aggregate_line_feedback(chunk_reviews)
-        Utils.debug_print(f"[DEBUG] Line feedback: {line_feedback}")
-
-        key_issues = []
-        security_concerns = []
-        relevant_tests = []
-        for review in chunk_reviews:
-            key_issues.extend(review.get('key_issues_to_review', []))
-            sec = review.get('security_concerns', None)
-            if sec is not None:
-                security_concerns.append(sec)
-            tests = review.get('relevant_tests', None)
-            if tests is not None:
-                relevant_tests.append(tests)
-        return {
-            "file_path": file_path,
-            "diff_lines": all_diff_lines,
-            "chunk_reviews": chunk_reviews,
-            "line_feedback": line_feedback,
-            "key_issues_to_review": key_issues,
-            "security_concerns": security_concerns,
-            "relevant_tests": relevant_tests,
-        }
-
-    def _review_single_chunk(self, chunk: Document, file_contents: Dict[str, str] = None) -> Dict[str, Any]:
+    def _review_single_chunk_with_context(self, chunk: Document, context_methods: List[str], file_contents: Dict[str, str] = None) -> Dict[str, Any]:
         metadata = chunk.metadata
         chunk_type = metadata.get('chunk_type', 'unknown')
         chunk_name = metadata.get('name', 'unknown')
@@ -172,15 +146,16 @@ Always respond in valid JSON format.
         relevant_bp = self._get_cached_best_practices(chunk_content)
         Utils.debug_print(relevant_bp)
         best_practices_text = format_best_practices_for_prompt(relevant_bp)
-        
-        # Debug logging
-        if relevant_bp:
-            Utils.debug_print(f"Found {len(relevant_bp)} relevant best practices for chunk {chunk_name}")
+
+        # Build context methods section
+        context_methods_text = "\n\n# Context methods (for reference only, do not review):\n"
+        if context_methods:
+            context_methods_text += "\n\n".join(context_methods)
         else:
-            Utils.debug_print(f"No relevant best practices found for chunk {chunk_name}")
+            context_methods_text = ""
 
         user_prompt = f"""
-Review this {code_type.upper()} code for real issues (bugs, performance, security, best practices):
+Review this {code_type.upper()} code for real issues (bugs, performance, security, best practices, and naming conventions):
 
 {best_practices_text}
 
@@ -191,6 +166,19 @@ CHANGED LINES: {sorted(diff_lines)}
 
 {context_info}
 
+# Method to review:
+{chunk.page_content}
+{context_methods_text}
+
+Additional Naming Rules:
+- All boolean variables and methods should start with is, has, should, can, or similar verbs (e.g., isActive, hasPermission).
+- Method and variable names must be meaningful, descriptive, and follow language conventions.
+- Do NOT accept generic names like data, value, temp, foo, bar, etc.
+- If you find a naming issue, set "matched_best_practices_and_severities": [] for that feedback (do NOT try to match unrelated best practices).
+
+Unit Test Requirement:
+- For each method reviewed, provide a relevant unit test (in the 'relevant_tests' field) that tests the main logic and edge cases of this method.
+
 Output JSON format:
 {{
     "line_feedback": [
@@ -199,23 +187,27 @@ Output JSON format:
                 "comment": "Issue description",
                 "suggest_code": "Fix code",
                 "explain_suggest_code": "Explanation",
-                "matched_best_practices_and_severities": ["BP201 - Serious"]
+                "matched_best_practices_and_severities": ["BP201 - Serious"] // or [] if no relevant best practice
             }}
         }}
     ],
     "key_issues_to_review": ["Critical issue 1"],
     "security_concerns": "Security issues or 'No security concerns identified'",
-    "relevant_tests": ["Test code snippet"]
+    "relevant_tests": ["Unit test code for this method"]
 }}
 
 RULES:
-- Only feedback for lines with real problems
-- Replace "line_number" with actual line number
-- For N+1 queries: Target line inside loop making DB call
-- For security: Target vulnerable code line
-- For performance: Target inefficient operation line
-- Keep comments concise and actionable
-- Max 5 key issues, focus on high-impact problems
+- Only feedback for lines with real problems.
+- For each feedback, only fill "matched_best_practices_and_severities" if there is a truly relevant best practice.
+- If the issue is about naming (e.g. variable/method not meaningful) or not covered by any best practice, set "matched_best_practices_and_severities": [].
+- Do NOT fill this field with unrelated best practices just to have a value.
+- For each method, always provide a relevant unit test in 'relevant_tests'.
+- Replace "line_number" with actual line number.
+- For N+1 queries: Target line inside loop making DB call.
+- For security: Target vulnerable code line.
+- For performance: Target inefficient operation line.
+- Keep comments concise and actionable.
+- Max 5 key issues, focus on high-impact problems.
 """
 
         try:

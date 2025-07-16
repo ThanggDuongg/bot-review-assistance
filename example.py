@@ -419,16 +419,16 @@ export class UserService {
 # Custom Bitbucket format with line numbers
 example_custom_bitbucket_diff = '''
 ## File: 'Backend/Controllers/ProductController.cs'
-- 3     public IActionResult GetProductReviews(int id) {
-- 4         var productWithReviews = _productRepository.GetByIdWithReviews(id); // Eager load
-- 5         if (productWithReviews == null) return NotFound();
-- 6         return Ok(productWithReviews.Reviews);
-+ 3     public IActionResult GetProductReviews(int id) {
-+ 4         var product = _productRepository.GetById(id);
-+ 5         var reviews = new List<Review>();
-+ 6         foreach (var reviewId in product.ReviewIds) {
-+ 7             reviews.Add(_reviewRepository.GetById(reviewId)); // N+1 query
-+ 8         }
-+ 9         return Ok(reviews);
-+ 10     }
+- 4     public IActionResult GetProductReviews(int id) {
+- 5         var productWithReviews = _productRepository.GetByIdWithReviews(id); // Eager load
+- 6         if (productWithReviews == null) return NotFound();
+- 7         return Ok(productWithReviews.Reviews);
++ 4     public IActionResult GetProductReviews(int id) {
++ 5         var product = _productRepository.GetById(id);
++ 6         var reviews = new List<Review>();
++ 7         foreach (var reviewId in product.ReviewIds) {
++ 8             reviews.Add(_reviewRepository.GetById(reviewId)); // N+1 query
++ 9         }
++ 10         return Ok(reviews);
++ 11     }
 '''
