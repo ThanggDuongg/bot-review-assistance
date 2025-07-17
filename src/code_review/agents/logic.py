@@ -140,7 +140,8 @@ Always respond in valid JSON format.
         language_context = get_language_context(code_type)
         performance_patterns = get_performance_patterns(code_type)
 
-        context_info = self._prepare_chunk_context(chunk, file_contents)
+        # TODO: Will be remove
+        # context_info = self._prepare_chunk_context(chunk, file_contents)
 
         # Get relevant best practices for this chunk
         chunk_content = chunk.page_content
@@ -149,12 +150,14 @@ Always respond in valid JSON format.
         best_practices_text = format_best_practices_for_prompt(relevant_bp)
 
         # Build context methods section
-        context_methods_text = "\n\n# Context methods (for reference only, do not review):\n"
+        context_methods_text = ""
         if context_methods:
-            context_methods_text += "\n\n".join(context_methods)
-        else:
-            context_methods_text = ""
+            context_methods_text = "\n\n# Context methods (for reference only, do not review these):\n"
+            for i, method in enumerate(context_methods, 1):
+                context_methods_text += f"\n## Context Method {i}:\n```{code_type}\n{method}\n```\n"
+            context_methods_text += "\n" + "=" * 60 + "\n"
 
+        format_chunk = self._format_chunk_with_highlighted_lines(chunk);
         user_prompt = f"""
 Review this {code_type.upper()} code for real issues (bugs, performance, security, best practices, and naming conventions):
 
@@ -163,12 +166,9 @@ Review this {code_type.upper()} code for real issues (bugs, performance, securit
 LANGUAGE CONTEXT: {language_context}
 PERFORMANCE PATTERNS: {performance_patterns}
 
-CHANGED LINES: {sorted(diff_lines)}
-
-{context_info}
-
-# Method to review:
-{chunk.page_content}
+METHOD TO REVIEW:
+FOCUS ON CHANGED LINES: {sorted(diff_lines)}
+{format_chunk}
 {context_methods_text}
 
 Additional Naming Rules:
@@ -194,7 +194,7 @@ Output JSON format:
     ],
     "key_issues_to_review": ["Critical issue 1"],
     "security_concerns": "Security issues or 'No security concerns identified'",
-    "relevant_tests": ["Unit test code for this method"]
+    "relevant_tests": ["Unit test code for this method"] // Provide unittests for this method or [] if no relevant tests
 }}
 
 RULES:
@@ -330,7 +330,24 @@ RULES:
             Utils.debug_print(f"LogicAgent: Failed to process chunk {chunk_name}: {str(e)}")
             return self._create_fallback_chunk_review(chunk)
 
+    @staticmethod
+    def _format_chunk_with_highlighted_lines(chunk: Document) -> str:
+        metadata = chunk.metadata
+        diff_lines = metadata.get('diff_lines', [])
+        start_line = metadata.get('start_line', 1)
+
+        lines = chunk.page_content.split('\n')
+        formatted_lines = []
+
+        for i, line in enumerate(lines):
+            current_line_number = start_line + i
+            prefix = ">>> " if current_line_number in diff_lines else "    "
+            formatted_lines.append(f"{prefix}{current_line_number:4d}: {line}")
+
+        return "\n".join(formatted_lines)
+
     def _prepare_chunk_context(self, chunk: Document, file_contents: Dict[str, str] = None) -> str:
+        """Obsolete"""
         metadata = chunk.metadata
         context_parts = []
 
