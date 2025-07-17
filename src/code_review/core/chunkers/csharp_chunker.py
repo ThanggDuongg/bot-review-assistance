@@ -27,16 +27,73 @@ class CSharpCodeChunker(BaseCodeChunker):
             return params
         
         def extract_return_type(node):
-            type_node = self.find_child_by_type(node, "type")
-            if type_node:
-                return self.extract_node_text(type_node, content)
+            # Look for return type in method declaration
+            # In C#, the return type comes before the method name
+            for child in node.children:
+                if child.type == "predefined_type":
+                    return self.extract_node_text(child, content)
+                elif child.type == "identifier":
+                    # This could be a custom type or generic type
+                    return self.extract_node_text(child, content)
+                elif child.type == "generic_name":
+                    # Handle generic types like IActionResult<T>, List<T>, etc.
+                    return self.extract_node_text(child, content)
+                elif child.type == "qualified_name":
+                    # Handle qualified names like System.Collections.Generic.List<T>
+                    return self.extract_node_text(child, content)
+
+            # Alternative approach: find type node more specifically
+            # Look for the pattern: [modifiers] return_type method_name(params)
+            children = node.children
+            for i, child in enumerate(children):
+                if child.type == "identifier" and i > 0:
+                    # Check if previous node could be return type
+                    prev_child = children[i - 1]
+                    if prev_child.type in ["predefined_type", "identifier", "generic_name", "qualified_name"]:
+                        return self.extract_node_text(prev_child, content)
+
             return None
         
         def extract_access_modifier(node):
+            # Access modifiers appear at the beginning of method declaration
             for child in node.children:
                 if child.type in ("public", "private", "protected", "internal"):
                     return child.type
+                elif child.type == "modifier":
+                    # Some parsers might wrap modifiers in a modifier node
+                    modifier_text = self.extract_node_text(child, content).strip()
+                    if modifier_text in ("public", "private", "protected", "internal"):
+                        return modifier_text
+
+            # Alternative approach: check if any child contains modifier keywords
+            for child in node.children:
+                child_text = self.extract_node_text(child, content).strip()
+                if child_text in ("public", "private", "protected", "internal"):
+                    return child_text
+
             return None
+
+        def extract_method_name(node):
+            # Method name is typically an identifier that comes after return type
+            # and before parameter list
+            children = node.children
+            param_list_found = False
+
+            # Find parameter list first
+            for child in children:
+                if child.type == "parameter_list":
+                    param_list_found = True
+                    break
+
+            if param_list_found:
+                for i, child in enumerate(children):
+                    if child.type == "parameter_list" and i > 0:
+                        # Check previous nodes for method name
+                        for j in range(i - 1, -1, -1):
+                            if children[j].type == "identifier":
+                                return self.extract_node_text(children[j], content)
+
+            return self.find_identifier(node, content)
         
         def extract_attributes(node):
             attrs = []
@@ -58,7 +115,7 @@ class CSharpCodeChunker(BaseCodeChunker):
                 return
             
             if node.type == "method_declaration":
-                name = self.find_identifier(node, content)
+                name = extract_method_name(node)
                 start_line = node.start_point[0]
                 end_line = node.end_point[0]
                 chunk = self.get_code(content, start_line, end_line + 1)

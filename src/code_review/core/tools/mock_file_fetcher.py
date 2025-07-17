@@ -10,10 +10,13 @@ class MockFileFetcher:
             'Backend/Controllers/ProductController.cs': '''
         using Microsoft.AspNetCore.Mvc;
         namespace Backend.Controllers {
+            [Authorize]
             public class ProductController : Controller {
+                [HttpGet("reviews/{id}")]
                 public IActionResult GetProductReviews(int id) {
                     var product = _productRepository.GetById(id);
                     var reviews = new List<Review>();
+                    var test = 1;
                     foreach (var reviewId in product.ReviewIds) {
                         reviews.Add(_reviewRepository.GetById(reviewId));
                     }
