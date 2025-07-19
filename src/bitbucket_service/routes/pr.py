@@ -1,15 +1,23 @@
-from cachetools import TTLCache
+from urllib.parse import unquote_plus
 from fastapi import APIRouter, Depends, BackgroundTasks
 
-from src.bitbucket_service.processor import ReviewPipeline, get_review_pipeline
-from src.bitbucket_service.services.pr_review import review_task
+from ..processor import ReviewPipeline, get_review_pipeline
+from ..services import review_task
+from ..cache_store import cache
 
 pr_router = APIRouter(prefix="/pr")
-cache = TTLCache(maxsize=1000, ttl=86400)
 
 @pr_router.get("/review")
 async def review(project, repo, pr_number, token, background_tasks: BackgroundTasks, pipeline: ReviewPipeline = Depends(get_review_pipeline)):
-    background_tasks.add_task(review_task, project, repo, pr_number, token, pipeline)
+    token = unquote_plus(token)
+    background_tasks.add_task(
+        review_task,
+        project,
+        repo,
+        pr_number,
+        token,
+        pipeline
+    )
 
 @pr_router.get("/result")
 async def result(project, repo, pr_number):

@@ -44,9 +44,9 @@ class FileFetcher:
         return file_contents
 
     def _fetch_single_file(self, file_path: str, repo_info: RepoInfo) -> Optional[str]:
-        project = repo_info.get('project_key')
+        project = repo_info.get('project')
         repo = repo_info.get('repo')
-        branch = repo_info.get('branch', 'develop')
+        branch = repo_info.get('branch')
         token = repo_info.get('token')
 
         if not project or not repo:
@@ -56,7 +56,7 @@ class FileFetcher:
             Utils.debug_print(f"Missing bitbucket token for {file_path}")
             return None
 
-        url = f"{self.base_url}/rest/api/1.0/projects/{project}/repos/{repo}/raw/{file_path}?at={branch}"
+        url = f"{self.base_url}/rest/api/latest/projects/{project}/repos/{repo}/raw/{file_path}?at={branch}"
         headers = {"Authorization": f"Bearer {token}"}
 
         for attempt in range(self.retry_attempts):

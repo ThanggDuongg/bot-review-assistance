@@ -1,10 +1,9 @@
-from src.code_review.pipeline.workflow import build_review_graph
-from src.code_review.agents import LogicAgent, SummaryAgent
+from ...code_review import LogicAgent, SummaryAgent, build_review_graph
 
 class ReviewPipeline:
     def __init__(self):
-        self.logic_agent = LogicAgent()
-        self.summary_agent = SummaryAgent()
+        # self.logic_agent = LogicAgent()
+        # self.summary_agent = SummaryAgent()
         self.graph = build_review_graph()
 
     def run(self, diff_text, repo_info=None):

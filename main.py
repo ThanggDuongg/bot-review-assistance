@@ -1,11 +1,11 @@
 import streamlit as st
 from dotenv import load_dotenv
 
+# Load environment variables
+load_dotenv('.env')
+
 from example import example_diff, example_custom_bitbucket_diff
 from src.code_review.pipeline.workflow import run_pipeline
-
-# Load environment variables
-load_dotenv(".env")
 
 def main():
     """Main entry point"""

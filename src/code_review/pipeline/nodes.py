@@ -1,8 +1,9 @@
-from typing import Optional, Any, Dict
 import os
 
+from typing import List, Tuple
+from langchain_core.documents import Document
 from ..agents import LogicAgent, SummaryAgent
-from ..core.schemas import ReviewState
+from ..core.schemas import ReviewState, RepoInfo
 from ..core.tools import FileFetcher, MockFileFetcher
 from ..core.vector_store import chunk_diff
 from ..core.chunkers.chunker_factory import get_context_chunker
@@ -13,28 +14,38 @@ logic_agent = LogicAgent()
 file_fetcher = FileFetcher()
 mock_file_fetcher = MockFileFetcher()
 
-def validate_repo_info(repo_info: Optional[Dict[str, Any]]) -> bool:
+def validate_repo_info(repo_info: RepoInfo) -> bool:
     if not repo_info:
         return False
     
-    # Check required fields
-    required_fields = ['workspace', 'repo']
+    required_fields = ['project', 'repo', 'pr_number', 'branch', 'token']
     for field in required_fields:
         if field not in repo_info or not repo_info[field]:
             Utils.debug_print(f"Pipeline: Missing required field '{field}' in repo_info")
             return False
-    
-    # Validate field types
-    if not isinstance(repo_info['workspace'], str) or not isinstance(repo_info['repo'], str):
-        Utils.debug_print("Pipeline: workspace and repo must be strings")
-        return False
-    
-    # Optional branch validation
-    if 'branch' in repo_info and not isinstance(repo_info['branch'], str):
-        Utils.debug_print("Pipeline: branch must be a string")
-        return False
-    
+
     return True
+
+def should_fetch_file(document: Document) -> bool:
+    # In diff_chunker I just add line + into diff_lines
+    diff_lines = document.metadata.get('diff_lines', [])
+    return len(diff_lines) > 0
+
+
+def filter_files_for_fetching(documents: List) -> Tuple[List[Document], List[Document]]:
+    files_to_fetch = []
+    skipped_files = []
+
+    for doc in documents:
+        file_path = doc.metadata.get('file_path', 'unknown')
+
+        if should_fetch_file(doc):
+            files_to_fetch.append(doc)
+        else:
+            skipped_files.append(file_path)
+
+    return files_to_fetch, skipped_files
+
 
 def chunk_node(state: ReviewState) -> dict:
     Utils.debug_print(f"[chunk_node] input state keys: {list(state.keys())}")
@@ -67,6 +78,19 @@ def fetch_files_node(state: ReviewState) -> dict:
         if not documents:
             Utils.debug_print("[fetch_files_node] No documents, returning empty file_contents")
             return {"file_contents": {}}
+
+        # Filter documents to only fetch files that need content
+        files_to_fetch, skipped_files = filter_files_for_fetching(documents)
+
+        Utils.debug_print(
+            f"Pipeline: Total files: {len(documents)}, Files to fetch: {len(files_to_fetch)}, Skipped: {len(skipped_files)}")
+        if skipped_files:
+            Utils.debug_print(f"Pipeline: Skipped files (only removals): {skipped_files}")
+
+        if not files_to_fetch:
+            Utils.debug_print("[fetch_files_node] No files need content fetching, returning empty file_contents")
+            return {"file_contents": {}}
+
         env = os.getenv('ENVIRONMENT', 'prod')
         if env != 'dev' and not validate_repo_info(repo_info):
             Utils.debug_print("[fetch_files_node] Invalid repo_info, skipping file fetching")
@@ -77,8 +101,8 @@ def fetch_files_node(state: ReviewState) -> dict:
         else:
             fetcher = file_fetcher
             Utils.debug_print("Pipeline: Using real FileFetcher")
-        Utils.debug_print(f"Pipeline: Fetching {len(documents)} files from {repo_info.get('workspace','?')}/{repo_info.get('repo','?')}...")
-        file_contents = fetcher.fetch_files_parallel(documents, repo_info)
+        Utils.debug_print(f"Pipeline: Fetching {len(files_to_fetch)} files from {repo_info.get('project','?')}/{repo_info.get('repo','?')}...")
+        file_contents = fetcher.fetch_files_parallel(files_to_fetch, repo_info)
         Utils.debug_print(f"Pipeline: Successfully fetched {len(file_contents)} files")
         output = {"file_contents": file_contents}
         Utils.debug_print(f"[fetch_files_node] output: {{'file_contents': {len(file_contents)}}}")

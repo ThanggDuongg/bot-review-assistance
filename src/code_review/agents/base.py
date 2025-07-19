@@ -12,9 +12,12 @@ _cached_llms = {}
 def get_llm_config(model_path):
     n_gpu_layers = Utils.detect_gpu_vram_and_layers()
     Utils.debug_print(f"Detected GPU layers: {n_gpu_layers}")
+
+    default_threads = int(os.getenv("EMBEDDING_N_THREADS", "8"))
+    optimal_threads = Utils.get_optimal_thread_count(default_threads)
     return dict(
         n_ctx=8192,  # Reduced context window for faster processing
-        n_threads=8,  # Increased threads for better CPU utilization
+        n_threads=optimal_threads,  # Increased threads for better CPU utilization
         n_batch=1024,  # Increased batch size for better throughput
         max_tokens=3072,  # Increased max tokens for comprehensive responses
         n_gpu_layers=n_gpu_layers,  # Dynamically set GPU layers
@@ -26,7 +29,7 @@ def load_local_llm(instance_name="default"):
     if instance_name in _cached_llms:
         return _cached_llms[instance_name]
     model_path = os.getenv("MODEL_PATH", "./models/Qwen2.5-Coder-7B-Instruct-Q6_K.gguf")
-    print(f"Loading LLM model instance '{instance_name}' from {model_path}")
+    Utils.debug_print(f"Loading LLM model instance '{instance_name}' from {model_path}")
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found at {model_path}")
     config = get_llm_config(model_path)
