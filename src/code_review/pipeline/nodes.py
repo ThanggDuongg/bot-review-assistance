@@ -39,7 +39,7 @@ def filter_files_for_fetching(documents: List) -> Tuple[List[Document], List[Doc
     for doc in documents:
         file_path = doc.metadata.get('file_path', 'unknown')
 
-        if should_fetch_file(doc):
+        if should_fetch_file(doc) and Utils.is_valid_code_file(file_path):
             files_to_fetch.append(doc)
         else:
             skipped_files.append(file_path)

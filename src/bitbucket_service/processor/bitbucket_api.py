@@ -74,7 +74,13 @@ async def _fetch_pr_info(session: aiohttp.ClientSession, url: str, headers: Dict
         return pr_info
 
 async def _fetch_pr_diff(session: aiohttp.ClientSession, url: str, headers: Dict[str, str]) -> str:
-    async with session.get(url, headers=headers) as response:
+    params = {
+        'contextLines': 0,
+        'whitespace': 'ignore-all',
+        'withComments': 'false'
+    }
+
+    async with session.get(url, params=params, headers=headers) as response:
         Utils.debug_print(f"PR Diff response status: {response.status}")
 
         if response.status != 200:

@@ -1,15 +1,7 @@
 language_contexts = {
     'csharp': {
-        'conventions': 'PascalCase for methods/properties, camelCase for fields',
+        'conventions': 'PascalCase for methods and properties, camelCase for fields',
         'performance_patterns': [
-            'N+1 queries in Entity Framework',
-            'Multiple IEnumerable enumeration',
-            'Inefficient LINQ usage',
-            'String concatenation in loops',
-            'Missing ConfigureAwait(false)',
-            'Synchronous I/O operations'
-        ],
-        'performance_patterns_to_detect': [
             'N+1 Query: Database calls inside loops (e.g., GetById() in foreach) - Look for repository.GetById() or similar calls inside foreach/for loops',
             'Multiple enumeration: Calling Count(), Any(), First() multiple times on same IEnumerable - Look for multiple LINQ operations on same variable',
             'Inefficient LINQ: Use of .Where().Count() instead of .Count(predicate) - Look for chained Where().Count() patterns',
@@ -36,13 +28,6 @@ language_contexts = {
     'javascript': {
         'conventions': 'camelCase for variables/functions',
         'performance_patterns': [
-            'DOM queries in loops',
-            'Memory leaks in closures',
-            'Inefficient array operations',
-            'Missing debouncing/throttling',
-            'Synchronous operations blocking UI'
-        ],
-        'performance_patterns_to_detect': [
             'DOM queries in loops: document.querySelector/getElementById inside for/while loops - cache DOM references',
             'Memory leaks in closures: Event listeners not removed, timers not cleared, or circular references',
             'Inefficient array operations: Using forEach/map when simple for loop would be faster, or nested loops with O(n²) complexity',
@@ -72,13 +57,6 @@ language_contexts = {
             'Inefficient array/object operations',
             'Improper use of any',
             'Missing async/await',
-            'Synchronous operations blocking UI'
-        ],
-        'performance_patterns_to_detect': [
-            'Unnecessary type assertions',
-            'Inefficient array/object operations',
-            'Improper use of any',
-            'Missing async/await',
             'Synchronous operations blocking UI',
             'Unoptimized change detection in Angular'
         ],
@@ -103,13 +81,6 @@ language_contexts = {
             'Inefficient use of useEffect',
             'Large component trees',
             'Not using React.memo',
-            'Inline function definitions in render'
-        ],
-        'performance_patterns_to_detect': [
-            'Unnecessary re-renders',
-            'Inefficient use of useEffect',
-            'Large component trees',
-            'Not using React.memo',
             'Inline function definitions in render',
             'Heavy use of state in deeply nested components'
         ],
@@ -130,13 +101,6 @@ language_contexts = {
     'angular': {
         'conventions': 'camelCase for variables/functions, PascalCase for components/services',
         'performance_patterns': [
-            'Unoptimized change detection',
-            'Inefficient use of ngFor',
-            'Memory leaks in subscriptions',
-            'Heavy use of two-way binding',
-            'Large modules/components'
-        ],
-        'performance_patterns_to_detect': [
             'Unoptimized change detection',
             'Inefficient use of ngFor',
             'Memory leaks in subscriptions',
@@ -170,9 +134,3 @@ def get_language_context(code_type: str) -> str:
         f"- Security concerns: {', '.join(ctx['security_concerns'])}\n"
         f"- Best practices: {', '.join(ctx['best_practices'])}"
     )
-
-def get_performance_patterns(code_type: str) -> str:
-    ctx = language_contexts.get(code_type.lower())
-    if not ctx or 'performance_patterns_to_detect' not in ctx:
-        return ''
-    return '\n'.join(ctx['performance_patterns_to_detect']) 

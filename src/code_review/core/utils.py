@@ -3,6 +3,7 @@ from typing import Optional, Any, List
 import os
 import multiprocessing
 import subprocess
+import re
 
 class Utils:
     # Debug mode flag
@@ -23,12 +24,35 @@ class Utils:
             response = response[len('```'):].strip()
         if response.endswith('```'):
             response = response[:-3].strip()
+
+        # Fix common JSON issues before parsing
+        response = Utils.fix_json_formatting(response)
+
         try:
             return json.loads(response)
         except Exception as e:
             print(response)
             print(f"[DEBUG] JSON parse error: {e}")
             return None
+
+    @staticmethod
+    def fix_json_formatting(json_str: str) -> str:
+        # Fix trailing commas in arrays
+        json_str = re.sub(r',(\s*])', r'\1', json_str)
+
+        # Fix trailing commas in objects
+        json_str = re.sub(r',(\s*})', r'\1', json_str)
+
+        # Fix missing quotes around keys (if needed)
+        json_str = re.sub(r'(\w+):', r'"\1":', json_str)
+
+        # Fix single quotes to double quotes
+        json_str = json_str.replace("'", '"')
+
+        # Remove any trailing commas at the end
+        json_str = re.sub(r',(\s*)$', r'\1', json_str)
+
+        return json_str
     
     @staticmethod
     def extract_file_extension(file_path: str) -> str:

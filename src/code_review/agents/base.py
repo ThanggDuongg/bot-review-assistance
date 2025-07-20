@@ -15,12 +15,37 @@ def get_llm_config(model_path):
 
     default_threads = int(os.getenv("EMBEDDING_N_THREADS", "8"))
     optimal_threads = Utils.get_optimal_thread_count(default_threads)
+
+    stop = [
+        "</s>",
+        "<|end|>",
+        "<|endoftext|>",
+
+        # Invalid JSON patterns
+        "}\n{",  # Multiple JSON objects
+        "}}\n",  # Double closing braces
+        "},\n  ]",
+        "},\n}",
+        "Human:",
+        "Assistant:",
+        "User:",
+        "AI:",
+        "INSTRUCTIONS:",
+        "CRITICAL:",
+        "REQUIRED:",
+        "FORBIDDEN:",
+        "\n\nLooking at",  # Prevents re-analysis
+        "\n\nExamining",  # Prevents re-examination
+        "\n\nAnalyzing",  # Prevents re-analyzing
+    ]
+
     return dict(
-        n_ctx=8192,  # Reduced context window for faster processing
+        n_ctx=8192, # Model 2.5-Coder-7B
         n_threads=optimal_threads,  # Increased threads for better CPU utilization
-        n_batch=1024,  # Increased batch size for better throughput
-        max_tokens=3072,  # Increased max tokens for comprehensive responses
+        n_batch=256, #128
+        max_tokens=1536, #1536
         n_gpu_layers=n_gpu_layers,  # Dynamically set GPU layers
+        stop=stop
     )
 
 @st.cache_resource
@@ -40,16 +65,16 @@ def load_local_llm(instance_name="default"):
             n_threads=Utils.get_optimal_thread_count(config['n_threads']),
             n_batch=config['n_batch'],
             max_tokens=config['max_tokens'],
-            temperature=0.1,
+            temperature=0.05,
             verbose=False,
-            stop=["</s>", "\n\n"],
-            f16_kv=True,
+            stop=config['stop'],
+            f16_kv=False, # Use 16-bit float -> quickly on CPU
             use_mlock=True,
             n_gpu_layers=config['n_gpu_layers'],  # Use detected value
-            seed=42,
-            repeat_penalty=1.1,
-            top_k=40,
-            top_p=0.9,
+            seed=42, # Deterministic
+            repeat_penalty=1.4,
+            top_k=15, # Focused vocabulary
+            top_p=0.9, # Less creativity
         )
         _cached_llms[instance_name] = llm_instance
         Utils.debug_print(f"Loaded and cached LLM instance '{instance_name}'")
@@ -86,6 +111,9 @@ class BaseAgent(ABC):
             Utils.debug_print(f"[DEBUG] Invoking LLM with {len(user_prompt)} chars...")
 
             response = self.llm.invoke(messages)
+            if len(response.content) >= 1500:
+                Utils.debug_print("Response might be truncated")
+
             result = response.content if hasattr(response, 'content') else str(response)
 
             Utils.debug_print(f"[DEBUG] LLM response length: {len(result)} chars")

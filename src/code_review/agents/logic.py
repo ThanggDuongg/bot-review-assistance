@@ -1,9 +1,9 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from .base import BaseAgent
 from langchain.schema import Document
 from ..core import Utils
 from ..core.vector_store import get_relevant_best_practices_for_chunk, format_best_practices_for_prompt
-from .language_contexts import get_language_context, get_performance_patterns
+from .language_contexts import get_language_context
 import hashlib
 import os
 from collections import OrderedDict
@@ -31,40 +31,17 @@ class LogicAgent(BaseAgent):
     @property
     def system_prompt(self) -> str:
         return """
-You are PR-Reviewer, an expert code reviewer and principal engineer. Your ONLY job is to find REAL problems:
-- Bugs that will cause runtime errors
-- Performance issues (N+1 queries, inefficient algorithms)
-- Security vulnerabilities
-- Critical best practice violations
+        You are PR-Reviewer, an expert code reviewer. Find REAL issues only:
+        - Runtime bugs and crashes
+        - Performance problems (N+1 queries, inefficient algorithms) 
+        - Security vulnerabilities
+        - Critical best practice violations
+        - Poor naming (non-descriptive variables/methods)
 
-STRICT RULES:
-- DO NOT describe what the code does.
-- DO NOT give feedback for function headers, braces, variable declarations, or lines with no issues.
-- DO NOT suggest improvements unless there is a real problem.
-- If you cannot find a real issue, OMIT that line from your feedback.
+        STRICT: Only flag lines with actual problems. No generic suggestions or code descriptions.
 
-BAD EXAMPLES (do NOT do this):
-- "Ensure the method signature is correct."
-- "Initialize the variable before use."
-- "Add error handling."
-- "Return the result."
-- "This line fetches data from the repository."
-- "This is a function header."
-
-GOOD EXAMPLES:
-- "N+1 query detected: Each review is fetched individually inside the loop. This can cause severe performance issues for large datasets. Use batch fetching instead."
-- "Potential SQL injection vulnerability: User input is concatenated directly into the query string. Use parameterized queries."
-
-Before returning your output, double-check that:
-- You only provide feedback for lines with real issues.
-- You do NOT describe code or give generic suggestions.
-- All feedback is actionable and expert-level.
-If you find any feedback that violates these rules, REMOVE it.
-
-If you provide feedback for lines with no real issue, or just describe code, your review will be considered low quality.
-
-Always respond in valid JSON format.
-"""
+        Response format: Valid JSON only.
+        """
 
     def process(self, chunked_documents: List[Document],
                 file_contents: Dict[str, str] = None) -> Dict[str, Any]:
@@ -89,7 +66,10 @@ Always respond in valid JSON format.
         file_reviews = []
         reviewed_hashes = {}
         # Only review function chunks
-        method_chunks = [doc for doc in chunked_documents if doc.metadata.get("chunk_type") == "function"]
+        method_chunks = [
+            doc for doc in chunked_documents
+            if self._should_review_chunk(doc)
+        ]
         for chunk in method_chunks:
             # Deduplicate by content hash
             content_hash = hashlib.md5(chunk.page_content.encode()).hexdigest()
@@ -105,7 +85,7 @@ Always respond in valid JSON format.
                     if context_key in method_lookup and method_lookup[context_key] != chunk:
                         context_methods.append(method_lookup[context_key].page_content)
                 context_methods = [m for m in context_methods if m != chunk.page_content]
-                chunk_review = self._review_single_chunk_with_context(chunk, context_methods, file_contents)
+                chunk_review = self._review_single_chunk_with_context(chunk, context_methods)
                 reviewed_hashes[content_hash] = chunk_review
             if chunk_review:
                 file_reviews.append(chunk_review)
@@ -129,7 +109,22 @@ Always respond in valid JSON format.
             "total_chunks_reviewed": len(method_chunks)
         }
 
-    def _review_single_chunk_with_context(self, chunk: Document, context_methods: List[str], file_contents: Dict[str, str] = None) -> Dict[str, Any]:
+    @staticmethod
+    def _should_review_chunk(chunk: Document) -> bool:
+        metadata = chunk.metadata
+
+        if metadata.get("chunk_type") != "function":
+            return False
+
+        diff_lines = metadata.get("diff_lines", [])
+        if not diff_lines or len(diff_lines) == 0:
+            Utils.debug_print(f"Skipping chunk {metadata.get('name', 'unknown')} - no diff lines")
+            return False
+
+        Utils.debug_print(f"Will review chunk {metadata.get('name', 'unknown')} - has {len(diff_lines)} diff lines")
+        return True
+
+    def _review_single_chunk_with_context(self, chunk: Document, context_methods: List[str]) -> Dict[str, Any]:
         metadata = chunk.metadata
         chunk_type = metadata.get('chunk_type', 'unknown')
         chunk_name = metadata.get('name', 'unknown')
@@ -138,7 +133,6 @@ Always respond in valid JSON format.
 
         code_type = Utils.detect_code_type(file_path)
         language_context = get_language_context(code_type)
-        performance_patterns = get_performance_patterns(code_type)
 
         # TODO: Will be remove
         # context_info = self._prepare_chunk_context(chunk, file_contents)
@@ -158,57 +152,47 @@ Always respond in valid JSON format.
             context_methods_text += "\n" + "=" * 60 + "\n"
 
         format_chunk = self._format_chunk_with_highlighted_lines(chunk);
+        # TODO: Create NamingAgent to check code convention
         user_prompt = f"""
-Review this {code_type.upper()} code for real issues (bugs, performance, security, best practices, and naming conventions):
+Review this {code_type.upper()} code for real issues:
 
 {best_practices_text}
 
-LANGUAGE CONTEXT: {language_context}
-PERFORMANCE PATTERNS: {performance_patterns}
+**IMPORTANT: ONLY review lines marked with ">>>" (lines {sorted(diff_lines)}). Ignore other lines.**
 
-METHOD TO REVIEW:
-FOCUS ON CHANGED LINES: {sorted(diff_lines)}
 {format_chunk}
 {context_methods_text}
 
-Additional Naming Rules:
-- All boolean variables and methods should start with is, has, should, can, or similar verbs (e.g., isActive, hasPermission).
-- Method and variable names must be meaningful, descriptive, and follow language conventions.
-- Do NOT accept generic names like data, value, temp, foo, bar, etc.
-- If you find a naming issue, set "matched_best_practices_and_severities": [] for that feedback (do NOT try to match unrelated best practices).
+Find ONLY in changed lines (marked with ">>>"):
+• Bugs, performance issues, security flaws  
+• Poor naming (use meaningful names, booleans start with is/has/can)
+• Violations of: {language_context}
 
-Unit Test Requirement:
-- For each method reviewed, provide a relevant unit test (in the 'relevant_tests' field) that tests the main logic and edge cases of this method.
+**Rules:**
+- ONLY comment on lines marked with ">>>" 
+- If changed lines have NO issues, return empty line_feedback: []
+- Don't review context lines (without ">>>")\
 
-Output JSON format:
+Provide unit test for this method.
+
+Return JSON format:
 {{
     "line_feedback": [
         {{
-            "line_number": {{
+            "LINE_NUMBER": {{
                 "comment": "Issue description",
-                "suggest_code": "Fix code",
-                "explain_suggest_code": "Explanation",
-                "matched_best_practices_and_severities": ["BP201 - Serious"] // or [] if no relevant best practice
+                "suggest_code": "Fix code", 
+                "explain_suggest_code": "Why fix is needed",
+                "matched_best_practices_and_severities": ["BP_CODE - Severity"]
             }}
         }}
     ],
-    "key_issues_to_review": ["Critical issue 1"],
-    "security_concerns": "Security issues or 'No security concerns identified'",
-    "relevant_tests": ["Unit test code for this method"] // Provide unittests for this method or [] if no relevant tests
+    "key_issues_to_review": ["Critical issues summary"],
+    "security_concerns": "Security issues found or 'No security concerns identified'",
+    "relevant_tests": ["Unit test code"]
 }}
 
-RULES:
-- Only feedback for lines with real problems.
-- For each feedback, only fill "matched_best_practices_and_severities" if there is a truly relevant best practice.
-- If the issue is about naming (e.g. variable/method not meaningful) or not covered by any best practice, set "matched_best_practices_and_severities": [].
-- Do NOT fill this field with unrelated best practices just to have a value.
-- For each method, always provide a relevant unit test in 'relevant_tests'.
-- Replace "line_number" with actual line number.
-- For N+1 queries: Target line inside loop making DB call.
-- For security: Target vulnerable code line.
-- For performance: Target inefficient operation line.
-- Keep comments concise and actionable.
-- Max 5 key issues, focus on high-impact problems.
+**Important:** Replace LINE_NUMBER with actual line numbers that have issues.
 """
 
         try:

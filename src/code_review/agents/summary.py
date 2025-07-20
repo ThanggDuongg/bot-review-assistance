@@ -16,29 +16,14 @@ class SummaryAgent(BaseAgent):
     @property
     def system_prompt(self) -> str:
         return """
-You are a Code Analysis Expert specializing in analyzing pull request changes using DeepSeek Coder's capabilities.
+        You are a Code Analysis Expert. Analyze pull request changes with focus on:
 
-Your expertise:
-- Deep understanding of code structure and patterns
-- Ability to identify technical implementation details
-- Structured analysis of code changes across different layers (frontend/backend)
-- Clear categorization of changes by type and impact
+        1. Technical accuracy and specific implementation details
+        2. Clear categorization of code patterns and dependencies  
+        3. Structured JSON output with concrete, specific language
 
-Your task is to:
-1. Analyze code changes at chunk, file, and project level
-2. Identify the technical purpose and implementation details
-3. Categorize changes by frontend/backend impact
-4. Assess business and technical implications
-5. Provide structured JSON output with specific fields
-
-Focus on:
-- Technical accuracy and code-specific insights
-- Structured categorization rather than narrative flow
-- Precise identification of code patterns and dependencies
-- Clear separation of concerns (frontend vs backend vs business logic)
-
-Output format: Always return valid JSON with the specified fields.
-        """
+        Always avoid generic terms. Use precise technical language describing exact changes and user-facing functionality.
+            """
 
     def process(self, chunk_docs: List[Document]) -> Dict[str, dict]:
         Utils.debug_print(f"[DEBUG] Processing {len(chunk_docs)} chunk documents...")
@@ -239,82 +224,53 @@ Output format: Always return valid JSON with the specified fields.
     def _create_analysis_prompt(content: str, file_paths: List[str]) -> str:
         extensions = [Utils.extract_file_extension(fp).lower() for fp in file_paths]
         unique_extensions = list(set(extensions))
-        
+
         return f"""
-Analyze these specific code changes:
+        Analyze this code change ({', '.join(unique_extensions)} files):
 
-File extensions: {', '.join(unique_extensions)}
-Content:
-{content}
+        {content}
 
-CRITICAL: You MUST be specific and concrete. DO NOT use generic language.
+        Create a concise analysis in JSON format:
 
-Provide a detailed analysis as JSON with these fields:
-- summary: What specific feature or functionality does this code implement? Be specific about what users can do. (max 100 words)
-- technical_details: What specific code changes were made? Include exact methods, classes, patterns used. Focus on concrete implementation details. (max 150 words)
+        {{
+            "summary": "Brief description of what users can now do (max 100 words)",
+            "technical_details": "Specific technical changes made (max 150 words)"
+        }}
 
-REQUIRED: Use specific language like:
-- "User dashboard displays order history with prices and dates"
-- "Fixed N+1 query using Include() for user orders"
-- "Added authorization check for profile updates"
-- "Implemented MediatR pattern for user queries"
-- "Display user statistics with total orders and spending"
-- "Show loading spinner during data fetching"
+        Requirements:
+        - Use specific technical terms, not generic words like "improvements"
+        - Each field must be a single paragraph (no bullet points)
+        - Stay within word limits strictly
+        - Focus on concrete functionality and implementation details
 
-FORBIDDEN: Do NOT use generic language like:
-- "Significant improvements"
-- "Enhanced security measures"
-- "Improved user experience"
-- "Better functionality"
-- "Comprehensive updates"
+        Good examples:
+        - summary: "Users can now view transport allowances and special skill premiums in Mauritius compensation letters with historical data comparison"
+        - technical_details: "Added GeneratePremiumsAndAllowancesSection method in CompensationLetterGenerator class with country-specific logic for Mauritius. Extended GenerateCompensationLetterInput with four new nullable double properties for current and previous year transport allowances and special skill premiums. Added corresponding translation keys in en.json localization file"
 
-INSTRUCTIONS:
-1. Identify specific user features implemented
-2. List exact technical changes made
-3. Mention specific patterns and optimizations
-4. Focus on concrete implementation details
-5. Avoid any generic marketing language
-
-Return only valid JSON based on the actual code content.
+        Return only valid JSON with no additional text or explanations.
         """
 
     @staticmethod
     def _create_combination_prompt(summary_list: str) -> str:
         return f"""
-Combine these group summaries into a comprehensive PR summary:
+        Combine these summaries into one comprehensive PR summary:
 
-Group summaries:
-- {summary_list}
+        {summary_list}
 
-CRITICAL: You MUST be specific and concrete. DO NOT use generic language.
+        Return JSON with:
+        - summary: What business functionality does this PR add? What can users do? (150 words max)
+        - technical_details: What specific technical changes were made? Include patterns, optimizations. (200 words max)
 
-Provide a comprehensive PR summary as JSON with these fields:
-- summary: What specific business functionality does this PR implement? What can users do now that they couldn't before? Be specific about features and user value. (max 150 words)
-- technical_details: What specific technical changes were made? Include exact patterns, optimizations, security measures, and implementation details. Focus on concrete changes, not generic concepts. (max 200 words)
+        BE SPECIFIC. Examples:
+        - "Dashboard shows real-time order status with WebSocket updates"
+        - "Implemented CQRS with MediatR for user management"
+        - "Added Redis caching for product catalog queries"
 
-REQUIRED: Use specific language like:
-- "User dashboard displays order history with prices and dates"
-- "Fixed N+1 query using Include() for user orders"
-- "Added authorization check for profile updates"
-- "Implemented MediatR pattern for user queries"
-- "Display user statistics with total orders and spending"
-- "Show loading spinner during data fetching"
+        AVOID: "significant improvements", "enhanced security", "better UX"
 
-FORBIDDEN: Do NOT use generic language like:
-- "Significant improvements"
-- "Enhanced security measures"
-- "Improved user experience"
-- "Better functionality"
-- "Comprehensive updates"
-
-INSTRUCTIONS:
-1. Extract specific features from group summaries
-2. Focus on concrete technical changes
-3. Mention exact patterns and optimizations
-4. Describe specific user functionality
-5. Avoid any generic marketing language
-
-Return only valid JSON based on the actual group summaries provided.
+        Be concrete: "User can view order history" not "improved experience"
+        Continuous text only, no bullets.
+        Return only valid JSON with continuous text fields.
         """
 
     @staticmethod
