@@ -5,6 +5,7 @@ from langchain_community.chat_models import ChatLlamaCpp
 from langchain_core.messages import SystemMessage, HumanMessage
 import streamlit as st
 
+from src.code_review.agents import APIClient
 from src.code_review.core import Utils
 
 _cached_llms = {}
@@ -40,10 +41,10 @@ def get_llm_config(model_path):
     ]
 
     return dict(
-        n_ctx=8192, # Model 2.5-Coder-7B
+        n_ctx=4096,
         n_threads=optimal_threads,  # Increased threads for better CPU utilization
-        n_batch=256, #128
-        max_tokens=1536, #1536
+        n_batch=128, #128
+        max_tokens=1024, #1536
         n_gpu_layers=n_gpu_layers,  # Dynamically set GPU layers
         stop=stop
     )
@@ -88,7 +89,16 @@ class BaseAgent(ABC):
     
     def __init__(self, agent_type: str = "default", llm: Optional[Any] = None):
         self.agent_type = agent_type
-        self.llm = llm or self._get_llm_instance()
+        self.use_api = os.getenv("USE_API_LLM", "false").lower() == "true"
+
+        if self.use_api:
+            self.api_client = APIClient()
+            self.llm = None
+            Utils.debug_print(f"[DEBUG] Agent '{self.agent_type}' using API backend")
+        else:
+            self.api_client = None
+            self.llm = llm or self._get_llm_instance()
+            Utils.debug_print(f"[DEBUG] Agent '{self.agent_type}' using local LLM backend")
     
     def _get_llm_instance(self):
         Utils.debug_print(f"Using shared LLM instance for agent type: {self.agent_type}")
@@ -103,21 +113,23 @@ class BaseAgent(ABC):
     def invoke(self, user_prompt: str) -> str:
         """Invoke the agent with a user prompt."""
         try:
-            messages = [
-                SystemMessage(content=self.system_prompt),
-                HumanMessage(content=user_prompt)
-            ]
+            Utils.debug_print(
+                f"[DEBUG] Invoking {'API' if self.use_api else 'Local'} LLM with {len(user_prompt)} chars...")
 
-            Utils.debug_print(f"[DEBUG] Invoking LLM with {len(user_prompt)} chars...")
+            if self.use_api:
+                result = self.api_client.invoke_api(self.system_prompt, user_prompt)
+            else:
+                messages = [
+                    SystemMessage(content=self.system_prompt),
+                    HumanMessage(content=user_prompt)
+                ]
+                response = self.llm.invoke(messages)
+                result = response.content if hasattr(response, 'content') else str(response)
 
-            response = self.llm.invoke(messages)
-            if len(response.content) >= 1500:
-                Utils.debug_print("Response might be truncated")
-
-            result = response.content if hasattr(response, 'content') else str(response)
+                if len(result) >= 1500:
+                    Utils.debug_print("Response might be truncated")
 
             Utils.debug_print(f"[DEBUG] LLM response length: {len(result)} chars")
-
             return result
         except Exception as e:
             Utils.debug_print(f"[DEBUG] LLM invoke error: {e}")

@@ -231,7 +231,6 @@ class SummaryAgent(BaseAgent):
         {content}
 
         Create a concise analysis in JSON format:
-
         {{
             "summary": "Brief description of what users can now do (max 100 words)",
             "technical_details": "Specific technical changes made (max 150 words)"
@@ -257,9 +256,11 @@ class SummaryAgent(BaseAgent):
 
         {summary_list}
 
-        Return JSON with:
-        - summary: What business functionality does this PR add? What can users do? (150 words max)
-        - technical_details: What specific technical changes were made? Include patterns, optimizations. (200 words max)
+        Create a concise analysis in JSON format:
+        {{
+            "summary": "Brief description of what users can now do (max 100 words)",
+            "technical_details": "Specific technical changes made (max 150 words)"
+        }}
 
         BE SPECIFIC. Examples:
         - "Dashboard shows real-time order status with WebSocket updates"
@@ -276,7 +277,7 @@ class SummaryAgent(BaseAgent):
     @staticmethod
     def _create_empty_summary() -> dict:
         return {
-            "summary": "[No changes to analyze]",
+            "summary": "",
             "technical_details": ""
         }
 

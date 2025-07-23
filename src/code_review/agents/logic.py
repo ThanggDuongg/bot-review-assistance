@@ -14,7 +14,7 @@ class LogicAgent(BaseAgent):
         super().__init__("logic", llm)
         self.bp_cache = OrderedDict()  # LRU Cache for best practices
         self.max_cache_size = int(os.getenv("LOGIC_AGENT_BP_CACHE_SIZE", "100"))
-    
+
     def _get_cached_best_practices(self, chunk_content: str, max_top_n: int = 1) -> list:
         content_hash = hashlib.md5(chunk_content.encode()).hexdigest()
         cache_key = f"{content_hash}_{max_top_n}"
@@ -31,16 +31,30 @@ class LogicAgent(BaseAgent):
     @property
     def system_prompt(self) -> str:
         return """
-        You are PR-Reviewer, an expert code reviewer. Find REAL issues only:
-        - Runtime bugs and crashes
-        - Performance problems (N+1 queries, inefficient algorithms) 
-        - Security vulnerabilities
-        - Critical best practice violations
-        - Poor naming (non-descriptive variables/methods)
+        You are PR-Reviewer, an expert code reviewer focused on finding ACTIONABLE issues.
 
-        STRICT: Only flag lines with actual problems. No generic suggestions or code descriptions.
+        PRIORITY TARGETS (in order):
+        1. Runtime bugs & crashes (null references, index out of bounds, unhandled exceptions)
+        2. Security vulnerabilities (SQL injection, XSS, authorization bypass, sensitive data exposure) 
+        3. Performance bottlenecks (N+1 queries, infinite loops, memory leaks, inefficient algorithms)
+        4. Logic errors that cause incorrect behavior (wrong conditions, calculation errors)
+        5. Critical violations of language-specific best practices that impact functionality
+        6. Poor naming that significantly impacts code understanding
 
-        Response format: Valid JSON only.
+        STRICT FILTERING RULES:
+        - ONLY flag lines with concrete, actionable problems that need immediate attention
+        - NO generic suggestions, style preferences, or minor improvements  
+        - NO comments on working code unless there's a clear functional issue
+        - Focus ONLY on changed lines (marked with ">>>")
+        - If no real issues exist in changed lines, return empty line_feedback: []
+
+        QUALITY STANDARDS:
+        - Each issue must include specific reason and suggested fix
+        - Prioritize issues by business impact and severity
+        - Be concise but thorough in explanations
+        - Only reference best practices that are directly applicable to the specific issue found
+
+        Response: Valid JSON only, no markdown wrappers.
         """
 
     def process(self, chunked_documents: List[Document],
@@ -56,20 +70,18 @@ class LogicAgent(BaseAgent):
                 "total_chunks_reviewed": 0
             }
 
-        # Build method lookup for context
-        method_lookup = {}
-        for doc in chunked_documents:
-            if doc.metadata.get("chunk_type") == "function":
-                key = (doc.metadata.get("parent"), doc.metadata.get("name"))
-                method_lookup[key] = doc
+        # Build comprehensive method lookup for context
+        method_lookup = self._build_method_lookup(chunked_documents)
 
         file_reviews = []
         reviewed_hashes = {}
+
         # Only review function chunks
         method_chunks = [
             doc for doc in chunked_documents
             if self._should_review_chunk(doc)
         ]
+
         for chunk in method_chunks:
             # Deduplicate by content hash
             content_hash = hashlib.md5(chunk.page_content.encode()).hexdigest()
@@ -77,16 +89,10 @@ class LogicAgent(BaseAgent):
                 chunk_review = reviewed_hashes[content_hash]
             else:
                 # Build context methods
-                context_methods = []
-                parent = chunk.metadata.get("parent")
-                method_calls = chunk.metadata.get("method_calls", [])
-                for called_name in method_calls:
-                    context_key = (parent, called_name)
-                    if context_key in method_lookup and method_lookup[context_key] != chunk:
-                        context_methods.append(method_lookup[context_key].page_content)
-                context_methods = [m for m in context_methods if m != chunk.page_content]
+                context_methods = self._get_context_methods(chunk, method_lookup)
                 chunk_review = self._review_single_chunk_with_context(chunk, context_methods)
                 reviewed_hashes[content_hash] = chunk_review
+
             if chunk_review:
                 file_reviews.append(chunk_review)
 
@@ -102,12 +108,128 @@ class LogicAgent(BaseAgent):
                 "relevant_tests": file_review.get("relevant_tests", []),
             }
             review_objects.append(file_obj)
+
         Utils.debug_print(f"[DEBUG] Final review_objects: {review_objects}")
         return {
             "file_reviews": review_objects,
             "total_files_reviewed": len(file_reviews),
             "total_chunks_reviewed": len(method_chunks)
         }
+
+    @staticmethod
+    def _build_method_lookup(chunked_documents: List[Document]) -> Dict:
+        """Build a comprehensive lookup for methods with multiple indexing strategies"""
+        method_lookup = {
+            'by_class_method': {},  # (class, method) -> Document
+            'by_method_name': {},  # method_name -> [Document, ...]
+            'by_file_method': {},  # (file, method) -> Document
+            'overloaded_methods': {}  # method_name -> [(class, params, Document), ...]
+        }
+
+        for doc in chunked_documents:
+            if doc.metadata.get("chunk_type") == "function":
+                parent_class = doc.metadata.get("parent")
+                method_name = doc.metadata.get("name")
+                file_path = doc.metadata.get("file_path")
+                parameters = doc.metadata.get("parameters", [])
+
+                # Index by (class, method)
+                if parent_class and method_name:
+                    key = (parent_class, method_name)
+                    method_lookup['by_class_method'][key] = doc
+
+                # Index by method name (for fuzzy matching)
+                if method_name:
+                    if method_name not in method_lookup['by_method_name']:
+                        method_lookup['by_method_name'][method_name] = []
+                    method_lookup['by_method_name'][method_name].append(doc)
+
+                # Index by (file, method) for file-scoped lookup
+                if file_path and method_name:
+                    key = (file_path, method_name)
+                    method_lookup['by_file_method'][key] = doc
+
+                # Index overloaded methods
+                if method_name:
+                    if method_name not in method_lookup['overloaded_methods']:
+                        method_lookup['overloaded_methods'][method_name] = []
+                    method_lookup['overloaded_methods'][method_name].append(
+                        (parent_class, parameters, doc)
+                    )
+
+        return method_lookup
+
+    @staticmethod
+    def _get_context_methods(chunk: Document, method_lookup: Dict) -> List[str]:
+        context_methods = []
+        current_file = chunk.metadata.get("file_path")
+        current_class = chunk.metadata.get("parent")
+        method_calls = chunk.metadata.get("method_calls", [])
+
+        Utils.debug_print(f"Getting context for {chunk.metadata.get('name')} in {current_class}")
+        Utils.debug_print(f"Method calls found: {len(method_calls)}")
+
+        for call_info in method_calls:
+            if not isinstance(call_info, dict):
+                continue
+
+            # Skip calls that are not context-worthy
+            if not call_info.get("is_context_worthy", False):
+                Utils.debug_print(f"Skipping {call_info.get('name')}: {call_info.get('reason')}")
+                continue
+
+            method_name = call_info.get("name")
+            call_type = call_info.get("call_type", "unknown")
+
+            Utils.debug_print(f"Looking for context method: {method_name} (type: {call_type})")
+
+            found_method = None
+
+            # Strategy 1: Exact match by class and method
+            if current_class and call_type in ["internal_method", "direct_method"]:
+                key = (current_class, method_name)
+                found_method = method_lookup['by_class_method'].get(key)
+                if found_method:
+                    Utils.debug_print(f"Found exact match: {current_class}.{method_name}")
+
+            # Strategy 2: Look in same file
+            if not found_method and current_file:
+                key = (current_file, method_name)
+                found_method = method_lookup['by_file_method'].get(key)
+                if found_method:
+                    Utils.debug_print(f"Found file-scoped match: {method_name} in {current_file}")
+
+            # Strategy 3: Fuzzy match by method name (same class preferred)
+            if not found_method:
+                candidates = method_lookup['by_method_name'].get(method_name, [])
+                if candidates:
+                    # Prefer methods from same class
+                    same_class_candidates = [
+                        doc for doc in candidates
+                        if doc.metadata.get("parent") == current_class
+                    ]
+                    if same_class_candidates:
+                        found_method = same_class_candidates[0]
+                        Utils.debug_print(f"Found same-class fuzzy match: {method_name}")
+                    elif len(candidates) == 1:
+                        # Only one candidate, probably safe to use
+                        found_method = candidates[0]
+                        Utils.debug_print(f"Found single fuzzy match: {method_name}")
+                    # If multiple candidates from different classes, skip to avoid confusion
+
+            # Add to context if found and not the same as current chunk
+            if found_method and found_method != chunk:
+                context_content = found_method.page_content
+                if context_content not in context_methods:
+                    context_methods.append(context_content)
+                    Utils.debug_print(f"Added to context: {method_name}")
+                else:
+                    Utils.debug_print(f"Already in context: {method_name}")
+            elif not found_method:
+                Utils.debug_print(f"No context found for: {method_name}")
+
+        Utils.debug_print(f"Total context methods found: {len(context_methods)}")
+        return context_methods
 
     @staticmethod
     def _should_review_chunk(chunk: Document) -> bool:
@@ -134,71 +256,89 @@ class LogicAgent(BaseAgent):
         code_type = Utils.detect_code_type(file_path)
         language_context = get_language_context(code_type)
 
-        # TODO: Will be remove
-        # context_info = self._prepare_chunk_context(chunk, file_contents)
-
         # Get relevant best practices for this chunk
         chunk_content = chunk.page_content
         relevant_bp = self._get_cached_best_practices(chunk_content)
         Utils.debug_print(relevant_bp)
-        best_practices_text = format_best_practices_for_prompt(relevant_bp)
+
+        best_practices_section = ""
+        if relevant_bp and len(relevant_bp) > 0:
+            best_practices_text = format_best_practices_for_prompt(relevant_bp)
+            best_practices_section = f"""
+        **RELEVANT BEST PRACTICES** (only include if you find a direct violation; DO NOT force-match otherwise)
+        These are best practices that might be relevant. You should ONLY mention them if the chunk of code actually violates them. If there's no clear violation, IGNORE them entirely. Do NOT try to match them if not applicable.
+        {best_practices_text}
+        """
 
         # Build context methods section
         context_methods_text = ""
         if context_methods:
-            context_methods_text = "\n\n# Context methods (for reference only, do not review these):\n"
+            context_methods_text = "\n\n# Related Methods (for understanding only - DO NOT review these):\n"
             for i, method in enumerate(context_methods, 1):
-                context_methods_text += f"\n## Context Method {i}:\n```{code_type}\n{method}\n```\n"
+                # Truncate very long methods to avoid token overflow
+                method_display = method[:500] + "..." if len(method) > 500 else method
+                context_methods_text += f"\n## Context Method {i}:\n```{code_type}\n{method_display}\n```\n"
             context_methods_text += "\n" + "=" * 60 + "\n"
 
-        format_chunk = self._format_chunk_with_highlighted_lines(chunk);
-        # TODO: Create NamingAgent to check code convention
+        format_chunk = self._format_chunk_with_highlighted_lines(chunk)
+
         user_prompt = f"""
-Review this {code_type.upper()} code for real issues:
+        Analyze this {code_type.upper()} code for actual functional problems in the changed lines only.
 
-{best_practices_text}
+        {best_practices_section}
 
-**IMPORTANT: ONLY review lines marked with ">>>" (lines {sorted(diff_lines)}). Ignore other lines.**
+        ***Find ONLY in changed lines (marked with ">>>"):***
+        • Bugs, performance issues, security flaws  
+        • Poor naming (use meaningful names, booleans start with is/has/can)
+        • Violations of: {language_context}
 
-{format_chunk}
-{context_methods_text}
+        **CODE TO ANALYZE:**
+        Lines marked with ">>>" need review: {sorted(diff_lines)}
+        Read the entire code below for context, but ONLY analyze issues in lines marked with ">>>":
 
-Find ONLY in changed lines (marked with ">>>"):
-• Bugs, performance issues, security flaws  
-• Poor naming (use meaningful names, booleans start with is/has/can)
-• Violations of: {language_context}
+        {format_chunk}
+        {context_methods_text}
 
-**Rules:**
-- ONLY comment on lines marked with ">>>" 
-- If changed lines have NO issues, return empty line_feedback: []
-- Don't review context lines (without ">>>")\
+        **REQUIRED JSON OUTPUT FORMAT:**
+        You MUST return valid JSON in exactly this structure:
 
-Provide unit test for this method.
-
-Return JSON format:
-{{
-    "line_feedback": [
+        If functional issues are found in marked lines:
+        ```json
         {{
-            "LINE_NUMBER": {{
-                "comment": "Issue description",
-                "suggest_code": "Fix code", 
-                "explain_suggest_code": "Why fix is needed",
-                "matched_best_practices_and_severities": ["BP_CODE - Severity"]
-            }}
+            "line_feedback": [
+                {{
+                    "[ACTUAL_LINE_NUMBER]": {{
+                        "comment": "Specific functional problem explanation",
+                        "suggest_code": "Concrete fix code",
+                        "explain_suggest_code": "Why this fix solves the problem",
+                        "matched_best_practices_and_severities": ["BP_CODE - Severity"]
+                    }}
+                }}
+            ],
+            "key_issues_to_review": ["Critical issues requiring immediate attention"],
+            "security_concerns": "Specific security issues found",
+            "relevant_tests": ["Unit test code for edge cases"]
         }}
-    ],
-    "key_issues_to_review": ["Critical issues summary"],
-    "security_concerns": "Security issues found or 'No security concerns identified'",
-    "relevant_tests": ["Unit test code"]
-}}
+        ```
 
-**Important:** Replace LINE_NUMBER with actual line numbers that have issues.
-"""
+        If NO functional issues found in marked lines:
+        ```json
+        {{
+            "line_feedback": [],
+            "key_issues_to_review": [],
+            "security_concerns": "No security concerns identified", 
+            "relevant_tests": []
+        }}
+        ```
+
+        **MANDATORY:** 
+        - Replace "[ACTUAL_LINE_NUMBER]" with the real line number that has issues\
+        - Response must be valid JSON format
+        - If no issues found, return empty arrays/appropriate empty values
+        """
 
         try:
             Utils.debug_print(f"REVIEWING LINES: {sorted(diff_lines)}")
-            Utils.debug_print(f"USER PROMPT SENT TO LLM:\n{user_prompt[:1000]}...\n[TRUNCATED]" if len(
-                user_prompt) > 1000 else f"USER PROMPT SENT TO LLM:\n{user_prompt}")
 
             response = self.invoke(user_prompt).strip()
             Utils.debug_print(f"RAW LLM RESPONSE: {response}")
@@ -233,7 +373,7 @@ Return JSON format:
                 # Ensure all required fields are present with reasonable defaults
                 review_obj.setdefault('key_issues_to_review', [])
                 review_obj.setdefault('security_concerns', "No security concerns identified")
-                review_obj.setdefault('relevant_tests', []) # Changed from "Add unit tests for edge cases and error handling" to []
+                review_obj.setdefault('relevant_tests', [])
 
                 # Ensure key_issues_to_review is a list
                 if not isinstance(review_obj.get('key_issues_to_review'), list):
@@ -300,6 +440,7 @@ Return JSON format:
                     ) for item in review_obj['relevant_tests']]
 
                 # Add metadata
+                review_obj["file_path"] = file_path
                 review_obj["chunk_type"] = chunk_type
                 review_obj["chunk_name"] = chunk_name
                 review_obj["diff_lines"] = diff_lines
@@ -358,6 +499,7 @@ Return JSON format:
 
     @staticmethod
     def _get_smart_context_lines(file_content: str, diff_lines: List[int], context_size: int = 1) -> List[str]:
+        """Obsolete"""
         if not diff_lines:
             return []
         lines = file_content.split('\n')
@@ -371,6 +513,7 @@ Return JSON format:
 
     @staticmethod
     def _group_chunks_for_review(chunks_by_file: Dict[str, List[Document]], max_lines: int = 300) -> Dict[str, List[List[Document]]]:
+        """Obsolete"""
         grouped = {}
         for file_path, chunks in chunks_by_file.items():
             total_lines = Utils.count_total_lines(chunks)
@@ -382,6 +525,7 @@ Return JSON format:
 
     @staticmethod
     def _aggregate_line_feedback(chunk_reviews: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Obsolete"""
         line_feedback = []
         for review in chunk_reviews:
             chunk_line_feedback = review.get('line_feedback', [])
@@ -396,12 +540,13 @@ Return JSON format:
     def _create_fallback_chunk_review(chunk: Document) -> Dict[str, Any]:
         metadata = chunk.metadata
         return {
+            "file_path": metadata.get('file_path', 'unknown'),
             "chunk_type": metadata.get('chunk_type', 'unknown'),
             "chunk_name": metadata.get('name', 'unknown'),
             "line_feedback": [],
             "key_issues_to_review": ["Review failed - unable to process chunk"],
             "security_concerns": "Unable to analyze security concerns",
-            "relevant_tests": "Unable to provide test recommendations",
+            "relevant_tests": [],
             "diff_lines": metadata.get('diff_lines', []),
             "start_line": metadata.get('start_line'),
             "end_line": metadata.get('end_line')
