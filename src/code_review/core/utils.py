@@ -37,19 +37,99 @@ class Utils:
 
     @staticmethod
     def fix_json_formatting(json_str: str) -> str:
+        lines = json_str.split('\n')
+        fixed_lines = []
+        i = 0
+
+        while i < len(lines):
+            line = lines[i].strip()
+
+            # Skip empty lines
+            if not line:
+                fixed_lines.append('')
+                i += 1
+                continue
+
+            # Check if this line contains a key-value pair with an unclosed string
+            if ':' in line and line.count('"') % 2 == 1:  # Odd number of quotes = unclosed string
+                # This line has an unclosed string, collect continuation lines
+                combined_line = line
+                i += 1
+
+                # Keep adding lines until we find the closing quote
+                while i < len(lines):
+                    next_line = lines[i].strip()
+                    combined_line += ' ' + next_line  # Join with space instead of newline
+
+                    # If this line has an odd number of quotes, we found the closing quote
+                    if next_line.count('"') % 2 == 1:
+                        break
+                    i += 1
+
+                fixed_lines.append(combined_line)
+            else:
+                fixed_lines.append(line)
+
+            i += 1
+
+        json_str = '\n'.join(fixed_lines)
+
+        # Quotes within string values
+        lines = json_str.split('\n')
+        final_lines = []
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                final_lines.append(line)
+                continue
+
+            # Handle key-value pairs that might have quotes in values
+            if ':' in line and re.match(r'\s*"[^"]+"\s*:', line):
+                # Split at the first colon to separate key and value
+                colon_pos = line.find(':')
+                key_part = line[:colon_pos].strip()
+                value_part = line[colon_pos + 1:].strip()
+
+                # Remove trailing comma if present
+                has_comma = value_part.endswith(',')
+                if has_comma:
+                    value_part = value_part[:-1].strip()
+
+                # If value is a string (starts and ends with quotes)
+                if value_part.startswith('"') and value_part.endswith('"'):
+                    # Extract the content between the outer quotes
+                    content = value_part[1:-1]
+
+                    # Replace single quotes with double quotes
+                    # Handle patterns like: Framework' -> Framework"
+                    content = content.replace("'", '"')
+
+                    # Escape any unescaped double quotes in the content
+                    content = re.sub(r'(?<!\\)"', r'\\"', content)
+
+                    # Rebuild the value
+                    value_part = f'"{content}"'
+
+                # Reconstruct the line
+                line = f"{key_part}: {value_part}"
+                if has_comma:
+                    line += ','
+
+            final_lines.append(line)
+
+        json_str = '\n'.join(final_lines)
+
         # Fix trailing commas in arrays
         json_str = re.sub(r',(\s*])', r'\1', json_str)
 
         # Fix trailing commas in objects
         json_str = re.sub(r',(\s*})', r'\1', json_str)
 
-        # Fix missing quotes around keys (if needed)
-        json_str = re.sub(r'(\w+):', r'"\1":', json_str)
+        # Fix missing quotes around keys ONLY if they're not already quoted
+        json_str = re.sub(r'(?<!")(\w+)(?=\s*:)', r'"\1"', json_str)
 
-        # Fix single quotes to double quotes
-        json_str = json_str.replace("'", '"')
-
-        # Remove any trailing commas at the end
+        # Remove any trailing commas at the end of the string
         json_str = re.sub(r',(\s*)$', r'\1', json_str)
 
         return json_str
