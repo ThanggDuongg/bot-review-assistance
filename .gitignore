@@ -29,6 +29,7 @@ MANIFEST
 # PyInstaller
 *.manifest
 *.spec
+!manifest.json
 
 # Installer logs
 pip-log.txt
@@ -169,6 +170,7 @@ data/
 datasets/
 *.csv
 *.json
+!src/chrome_extension/*.json
 *.jsonl
 *.parquet
 *.feather
@@ -233,6 +235,7 @@ test_results/
 
 # Virtual environment activation scripts
 Scripts/
+!src/chrome_extension/scripts
 pyvenv.cfg
 
 # Local development files

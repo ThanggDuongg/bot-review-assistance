@@ -1,0 +1,40 @@
+.reviewer-status-buttons.reviewing {
+    max-width: 300px !important;
+}
+
+.status-button.review {
+    margin-left: 2px;
+    align-items: baseline;
+    border-width: 0px;
+    border-radius: var(--ds-border-radius, 3px);
+    box-sizing: border-box;
+    display: inline-flex;
+    font-size: inherit;
+    font-style: normal;
+    font-family: inherit;
+    font-weight: 500;
+    max-width: 100%;
+    position: relative;
+    text-align: center;
+    text-decoration: none;
+    transition: background 0.1s ease-out, box-shadow 0.15s cubic-bezier(0.47, 0.03, 0.49, 1.38);
+    white-space: nowrap;
+    background: var(--ds-background-neutral, rgba(9, 30, 66, 0.04));
+    cursor: pointer;
+    height: 2.28571em;
+    line-height: 2.28571em;
+    padding: 0px 2px;
+    vertical-align: middle;
+    width: auto;
+    -webkit-box-pack: center;
+    justify-content: center;
+    color: var(--ds-text, #42526E) !important;
+    padding: 0 10px;
+}
+
+.status-button.review:hover {
+    background: var(--ds-background-neutral-hovered, rgba(9, 30, 66, 0.08));
+    text-decoration: inherit;
+    transition-duration: 0s, 0.15s;
+    color: var(--ds-text, #42526E) !important;
+}
