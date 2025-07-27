@@ -22,7 +22,7 @@ def load_embedding_model():
     if _cached_embeddings is not None:
         return _cached_embeddings
 
-    embedding_model_path = os.getenv("EMBEDDING_MODEL_PATH", "./models/all-MiniLM-L6-v2-Q5_K_M.gguf")
+    embedding_model_path = os.getenv("EMBEDDING_MODEL_PATH", "./models/embedding.gguf")
     try:
         # Get optimal thread count based on CPU cores
         default_threads = int(os.getenv("EMBEDDING_N_THREADS", "8"))

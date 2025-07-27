@@ -54,7 +54,7 @@ def load_local_llm(instance_name="default"):
     global _cached_llms
     if instance_name in _cached_llms:
         return _cached_llms[instance_name]
-    model_path = os.getenv("MODEL_PATH", "./models/Qwen2.5-Coder-7B-Instruct-Q6_K.gguf")
+    model_path = os.getenv("MODEL_PATH", "./models/main.gguf")
     Utils.debug_print(f"Loading LLM model instance '{instance_name}' from {model_path}")
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found at {model_path}")
