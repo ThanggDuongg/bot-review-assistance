@@ -1,0 +1,9 @@
+{
+  "dependencies": [
+    "."
+  ],
+  "graphs": {
+    "code-review": "src.code_review.pipeline.workflow:code_review_graph"
+  },
+  "env": "./.env"
+}

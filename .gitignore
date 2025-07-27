@@ -171,6 +171,7 @@ datasets/
 *.csv
 *.json
 !src/chrome_extension/*.json
+!langgraph.json
 *.jsonl
 *.parquet
 *.feather
