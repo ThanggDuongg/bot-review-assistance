@@ -20,7 +20,12 @@ const project = parts[2];
 const repo = parts[4];
 const pullRequestId = parts[6];
 const user = document.querySelector('#current-user').getAttribute('data-username');
-fetch(`${localStorage.getItem('...')}/pr/result?project=${project}&repo=${repo}&pr_number=${pullRequestId}`)
+fetch(`${localStorage.getItem('...')}/pr/result?project=${project}&repo=${repo}&pr_number=${pullRequestId}`,
+    {
+        headers: {
+            'ngrok-skip-browser-warning': 'true'
+        }
+    })
     .then(async x => {
         const result = await x.json();
         if (result === 'processing') {
