@@ -37,12 +37,18 @@ class SummaryAgent(BaseAgent):
         
         Utils.debug_print(f"[DEBUG] Grouped into {len(file_contents)} files")
         
-        # Analyze based on content size
-        pr_summary = self._analyze_files_smart(file_contents)
+        # Simple size-based strategy
+        total_size = self._calculate_total_size(file_contents)
+        estimated_tokens = Utils.estimate_tokens(total_size, self.chars_per_token)
         
-        Utils.debug_print(f"[DEBUG] PR summary: {pr_summary}")
+        Utils.debug_print(f"[DEBUG] Total content size: {total_size} chars, estimated tokens: {estimated_tokens}")
         
-        return {"summary": pr_summary}
+        if total_size > self.size_threshold:
+            Utils.debug_print(f"[DEBUG] Content size exceeds threshold, using hybrid grouping")
+            return {"summary": self._analyze_with_hybrid_grouping(file_contents)}
+        else:
+            Utils.debug_print(f"[DEBUG] Content size OK, using single call")
+            return {"summary": self._analyze_single_call(file_contents)}
 
     @staticmethod
     def _group_chunks_by_file(chunk_docs: List[Document]) -> Dict[str, List[str]]:
@@ -53,28 +59,6 @@ class SummaryAgent(BaseAgent):
                 file_contents[file_path] = []
             file_contents[file_path].append(doc.page_content)
         return file_contents
-
-    def _analyze_files_smart(self, file_contents: Dict[str, List[str]]) -> dict:
-        # Calculate total content size
-        total_size = self._calculate_total_size(file_contents)
-        estimated_tokens = Utils.estimate_tokens(total_size, self.chars_per_token)
-        
-        Utils.debug_print(f"[DEBUG] Total content size: {total_size} chars, estimated tokens: {estimated_tokens}")
-        
-        # Check for mixed languages
-        extensions = set(Utils.extract_file_extension(fp).lower() for fp in file_contents.keys())
-        has_mixed_languages = len(extensions) > 2
-        
-        Utils.debug_print(f"[DEBUG] File extensions: {extensions}")
-        Utils.debug_print(f"[DEBUG] Has mixed languages: {has_mixed_languages}")
-        
-        # Strategy based on size AND language diversity
-        if total_size > self.size_threshold or has_mixed_languages:
-            Utils.debug_print(f"[DEBUG] Using hybrid grouping (size: {total_size > self.size_threshold}, mixed: {has_mixed_languages})")
-            return self._analyze_with_hybrid_grouping(file_contents)
-        else:
-            Utils.debug_print(f"[DEBUG] Content size OK and single language, using single call")
-            return self._analyze_single_call(file_contents)
 
     @staticmethod
     def _calculate_total_size(file_contents: Dict[str, List[str]]) -> int:
@@ -96,12 +80,7 @@ class SummaryAgent(BaseAgent):
             result = self.invoke(user_prompt).strip()
             parsed_result = Utils.parse_json_from_response(result)
             
-            if parsed_result:
-                Utils.debug_print(f"[DEBUG] Successfully analyzed all files in single call")
-                return parsed_result
-            else:
-                Utils.debug_print(f"[DEBUG] Failed to parse JSON for combined analysis")
-                return self._create_error_summary("JSON parsing failed")
+            return parsed_result or self._create_error_summary("JSON parsing failed")
                 
         except Exception as e:
             Utils.debug_print(f"[DEBUG] Failed to analyze files in single call: {e}")
@@ -113,25 +92,10 @@ class SummaryAgent(BaseAgent):
         
         Utils.debug_print(f"[DEBUG] Created {len(extension_groups)} extension groups")
         
-        # Split large extension groups by size
-        final_groups = []
-        for group in extension_groups:
-            group_size = self._calculate_group_size(group)
-            
-            if group_size > self.max_group_size:
-                Utils.debug_print(f"[DEBUG] Splitting large group ({group_size} chars) by size")
-                # Split large group by size
-                size_groups = self._split_group_by_size(group)
-                final_groups.extend(size_groups)
-            else:
-                final_groups.append(group)
-        
-        Utils.debug_print(f"[DEBUG] Final groups: {len(final_groups)}")
-        
-        # Analyze each group
+        # Analyze each group directly
         group_summaries = []
-        for i, group in enumerate(final_groups):
-            Utils.debug_print(f"[DEBUG] Analyzing group {i+1}/{len(final_groups)}")
+        for i, group in enumerate(extension_groups):
+            Utils.debug_print(f"[DEBUG] Analyzing group {i+1}/{len(extension_groups)}")
             group_summary = self._analyze_single_call(group)
             group_summaries.append(group_summary)
         
@@ -152,39 +116,6 @@ class SummaryAgent(BaseAgent):
         
         return list(extension_groups.values())
 
-    @staticmethod
-    def _calculate_group_size(group: Dict[str, List[str]]) -> int:
-        total_size = 0
-        for file_path, contents in group.items():
-            file_content = "\n".join(contents)
-            total_size += Utils.calculate_content_size(file_content)
-        return total_size
-
-    def _split_group_by_size(self, group: Dict[str, List[str]]) -> List[Dict[str, List[str]]]:
-        groups = []
-        current_group = {}
-        current_size = 0
-        
-        for file_path, contents in group.items():
-            file_content = "\n".join(contents)
-            file_size = Utils.calculate_content_size(file_content)
-            
-            # If adding this file would exceed limit, start new group
-            if current_size + file_size > self.max_group_size and current_group:
-                groups.append(current_group)
-                current_group = {}
-                current_size = 0
-            
-            # Add file to current group
-            current_group[file_path] = contents
-            current_size += file_size
-        
-        # Add last group
-        if current_group:
-            groups.append(current_group)
-        
-        return groups
-
     def _combine_group_summaries(self, group_summaries: List[dict]) -> dict:
         if not group_summaries:
             return self._create_empty_summary()
@@ -201,12 +132,7 @@ class SummaryAgent(BaseAgent):
             result = self.invoke(user_prompt).strip()
             parsed_result = Utils.parse_json_from_response(result)
             
-            if parsed_result:
-                Utils.debug_print(f"[DEBUG] Successfully combined group summaries")
-                return parsed_result
-            else:
-                Utils.debug_print(f"[DEBUG] Failed to parse JSON for combined summaries")
-                return self._create_error_summary("JSON parsing failed")
+            return parsed_result or self._create_error_summary("JSON parsing failed")
                 
         except Exception as e:
             Utils.debug_print(f"[DEBUG] Failed to combine group summaries: {e}")
