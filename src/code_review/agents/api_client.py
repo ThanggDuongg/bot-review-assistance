@@ -52,5 +52,4 @@ class APIClient:
             raise RuntimeError(f"Ollama API call failed: {str(e)}")
 
     def invoke_api(self, system_prompt: str, user_prompt: str) -> str:
-        # combined_prompt = f"System: {system_prompt}\n\nHuman: {user_prompt}\n\nAssistant:"
         return self._call_ollama_server(system_prompt, user_prompt)

@@ -86,8 +86,8 @@ def load_local_llm(instance_name="default"):
     global _cached_llms
     if instance_name in _cached_llms:
         return _cached_llms[instance_name]
+
     model_path = os.getenv("MODEL_PATH", "./models/main.gguf")
-    Utils.debug_print(f"Loading LLM model instance '{instance_name}' from {model_path}")
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found at {model_path}")
     config = get_llamacpp_config()
@@ -112,24 +112,12 @@ def load_local_llm(instance_name="default"):
             top_p=config['top_p'],
         )
         _cached_llms[instance_name] = llm_instance
-        Utils.debug_print(f"Loaded and cached LLM instance '{instance_name}'")
         return llm_instance
     except Exception as e:
         raise RuntimeError(f"Failed to load LLM model instance '{instance_name}': {str(e)}")
 
 @st.cache_resource
 def load_ollama_llm(instance_name: str = "default"):
-    import certifi
-    import ssl
-    # Set certificate paths
-    os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
-    os.environ['SSL_CERT_FILE'] = certifi.where()
-    os.environ['CURL_CA_BUNDLE'] = certifi.where()
-
-    # Disable SSL verification globally (temporary fix)
-    ssl._create_default_https_context = ssl._create_unverified_context
-
-
     global _cached_llms
     base_url = os.getenv("AI_URL", "")
     model = os.getenv("API_MODEL", "codellama:7b")
@@ -138,9 +126,6 @@ def load_ollama_llm(instance_name: str = "default"):
         return _cached_llms[cache_key]
     try:
         from langchain_ollama import ChatOllama
-        ssl_context = ssl.create_default_context(cafile=certifi.where())
-        ssl._create_default_https_context = lambda: ssl_context
-
         config = get_ollama_config()
 
         llm_instance = ChatOllama(
@@ -149,7 +134,6 @@ def load_ollama_llm(instance_name: str = "default"):
             **config
         )
         _cached_llms[cache_key] = llm_instance
-        Utils.debug_print(f"Loaded and cached Ollama LLM instance '{cache_key}'")
         return llm_instance
     except Exception as e:
         raise RuntimeError(f"Failed to load Ollama LLM instance '{cache_key}': {str(e)}")
@@ -202,9 +186,6 @@ class BaseAgent(ABC):
                 ]
                 response = self.llm.invoke(messages)
                 result = response.content if hasattr(response, 'content') else str(response)
-
-            if len(result) >= 1500:
-                Utils.debug_print("Response might be truncated")
 
             Utils.debug_print(f"[DEBUG] LLM response length: {len(result)} chars")
             return result

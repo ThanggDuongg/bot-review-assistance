@@ -26,23 +26,13 @@ class SummaryAgent(BaseAgent):
             """
 
     def process(self, chunk_docs: List[Document]) -> Dict[str, dict]:
-        Utils.debug_print(f"[DEBUG] Processing {len(chunk_docs)} chunk documents...")
-        
         if not chunk_docs:
             Utils.debug_print("[DEBUG] No chunks provided")
             return {"summary": self._create_empty_summary()}
         
-        # Group chunks by file
         file_contents = self._group_chunks_by_file(chunk_docs)
-        
-        Utils.debug_print(f"[DEBUG] Grouped into {len(file_contents)} files")
-        
-        # Simple size-based strategy
+
         total_size = self._calculate_total_size(file_contents)
-        estimated_tokens = Utils.estimate_tokens(total_size, self.chars_per_token)
-        
-        Utils.debug_print(f"[DEBUG] Total content size: {total_size} chars, estimated tokens: {estimated_tokens}")
-        
         if total_size > self.size_threshold:
             Utils.debug_print(f"[DEBUG] Content size exceeds threshold, using hybrid grouping")
             return {"summary": self._analyze_with_hybrid_grouping(file_contents)}
@@ -62,7 +52,6 @@ class SummaryAgent(BaseAgent):
 
     @staticmethod
     def _calculate_total_size(file_contents: Dict[str, List[str]]) -> int:
-        """Calculate total content size in characters."""
         total_size = 0
         for file_path, contents in file_contents.items():
             file_content = "\n".join(contents)
@@ -70,13 +59,10 @@ class SummaryAgent(BaseAgent):
         return total_size
 
     def _analyze_single_call(self, file_contents: Dict[str, List[str]]) -> dict:
-        # Combined content
         combined_content = self._prepare_combined_content(file_contents)
 
         user_prompt = self._create_analysis_prompt(combined_content, list(file_contents.keys()))
         try:
-            Utils.debug_print(f"[DEBUG] Analyzing {len(file_contents)} files in single call")
-            
             result = self.invoke(user_prompt).strip()
             parsed_result = Utils.parse_json_from_response(result)
             
@@ -87,19 +73,13 @@ class SummaryAgent(BaseAgent):
             return self._create_error_summary("Processing failed")
 
     def _analyze_with_hybrid_grouping(self, file_contents: Dict[str, List[str]]) -> dict:
-        # Group by extension
         extension_groups = self._group_by_extension(file_contents)
-        
-        Utils.debug_print(f"[DEBUG] Created {len(extension_groups)} extension groups")
-        
-        # Analyze each group directly
+
         group_summaries = []
-        for i, group in enumerate(extension_groups):
-            Utils.debug_print(f"[DEBUG] Analyzing group {i+1}/{len(extension_groups)}")
+        for group in extension_groups:
             group_summary = self._analyze_single_call(group)
             group_summaries.append(group_summary)
-        
-        # Combine group summaries
+
         return self._combine_group_summaries(group_summaries)
 
     @staticmethod
@@ -127,8 +107,6 @@ class SummaryAgent(BaseAgent):
         user_prompt = self._create_combination_prompt(summary_list)
 
         try:
-            Utils.debug_print(f"[DEBUG] Combining {len(group_summaries)} group summaries")
-            
             result = self.invoke(user_prompt).strip()
             parsed_result = Utils.parse_json_from_response(result)
             

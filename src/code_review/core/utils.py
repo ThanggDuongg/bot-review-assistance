@@ -148,15 +148,6 @@ class Utils:
     @staticmethod
     def calculate_content_size(content: str) -> int:
         return len(content)
-    
-    @staticmethod
-    def estimate_tokens(content: Any, chars_per_token: int = 4) -> int:
-        if isinstance(content, str):
-            return len(content) // chars_per_token
-        elif isinstance(content, int):
-            return content // chars_per_token
-        else:
-            raise ValueError(f"Content must be string or int, got {type(content)}") 
 
     @staticmethod
     def detect_code_type(file_path: str) -> str:

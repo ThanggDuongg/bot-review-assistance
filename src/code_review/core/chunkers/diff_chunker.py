@@ -1,15 +1,10 @@
 import re
 from typing import List, Tuple, Dict, Any
 from langchain.schema import Document
-import os
-from ..utils import Utils
 
-# Debug mode flag
-DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
 
 class DiffChunker:
     def __init__(self):
-        # Custom Bitbucket patterns (with line numbers)
         self.custom_bitbucket_file_pattern = re.compile(r"^## File: '(.+?)'$", re.MULTILINE)
         self.custom_bitbucket_line_pattern = re.compile(r'^([+\-~])\s+(\d+)\s+(.+)$', re.MULTILINE)
     
@@ -20,7 +15,6 @@ class DiffChunker:
             return "plain"
     
     def extract_file_paths_custom_bitbucket(self, diff_text: str) -> List[Tuple[str, int, int]]:
-        """Extract file paths for custom Bitbucket format with line numbers"""
         file_info = []
         for match in self.custom_bitbucket_file_pattern.finditer(diff_text):
             file_path = match.group(1)
@@ -37,11 +31,8 @@ class DiffChunker:
     
     @staticmethod
     def extract_hunks_custom_bitbucket(file_block: str) -> List[Tuple[int, int, Dict[str, Any]]]:
-        """Extract hunks for custom Bitbucket format (no @@ headers, just line-by-line)"""
         hunks = []
-        
-        # For custom Bitbucket format, treat entire file block as one hunk
-        # since there are no @@ headers to split on
+
         if file_block.strip():
             hunks.append((0, len(file_block), {
                 "has_line_numbers": True,
@@ -50,17 +41,14 @@ class DiffChunker:
         
         return hunks
     
-    def extract_diff_lines_custom_bitbucket(self, hunk_content: str, hunk_info: Dict[str, Any]) -> List[int]:
-        """Extract diff lines for custom Bitbucket format with line numbers"""
+    def extract_diff_lines_custom_bitbucket(self, hunk_content: str) -> List[int]:
         diff_lines = []
         
         for line in hunk_content.splitlines():
-            # Ex: + 15 public class UserService {
             match = re.match(self.custom_bitbucket_line_pattern, line)
             if match:
-                status = match.group(1)  # +, -, or ~
-                line_number = int(match.group(2))  # Actual file line number
-                content = match.group(3)
+                status = match.group(1)  # +, -, ~
+                line_number = int(match.group(2))
                 
                 # Only include added lines (+) in diff_lines
                 if status == '+':
@@ -69,43 +57,30 @@ class DiffChunker:
         return diff_lines
     
     def chunk_diff(self, diff_text: str) -> Tuple[List[Document], List[str]]:
-        if DEBUG_MODE:
-            Utils.debug_print("[DEBUG] chunk_diff input:\n", diff_text[:1000], "...\n---END---")
-        
         documents = []
         file_paths = []
         
-        # Detect diff format
         diff_format = self.detect_diff_format(diff_text)
-        if DEBUG_MODE:
-            Utils.debug_print(f"[DEBUG] Detected diff format: {diff_format}")
-        
-        # Extract file information
+
         if diff_format == "custom_bitbucket":
             file_info = self.extract_file_paths_custom_bitbucket(diff_text)
         else:
-            # Fallback for plain format
+            # For plain format
             file_info = [("unknown_file", 0, len(diff_text))]
-        
-        if DEBUG_MODE:
-            Utils.debug_print(f"[DEBUG] Found {len(file_info)} file matches in diff.")
-        
-        # If no files detected, treat entire diff as one file
+
         if not file_info:
             file_info = [("unknown_file", 0, len(diff_text))]
         
-        # Process each file
         for file_path, start_pos, end_pos in file_info:
             file_block = diff_text[start_pos:end_pos]
             
-            # Extract hunks (only custom bitbucket supported)
+            # Extract hunks
             if diff_format == "custom_bitbucket":
                 hunks = self.extract_hunks_custom_bitbucket(file_block)
             else:
                 hunks = []
             
             if not hunks:
-                # If no hunks, create one document for entire file
                 documents.append(Document(
                     page_content=file_block.strip(),
                     metadata={
@@ -115,13 +90,12 @@ class DiffChunker:
                     }
                 ))
             else:
-                # Create document for each hunk
                 for hunk_idx, (hunk_start, hunk_end, hunk_info) in enumerate(hunks):
                     hunk_content = file_block[hunk_start:hunk_end].strip()
                     
                     if hunk_content:
                         if diff_format == "custom_bitbucket":
-                            diff_lines = self.extract_diff_lines_custom_bitbucket(hunk_content, hunk_info)
+                            diff_lines = self.extract_diff_lines_custom_bitbucket(hunk_content)
                         else:
                             diff_lines = []
                         
@@ -138,8 +112,5 @@ class DiffChunker:
                         ))
             
             file_paths.append(file_path)
-        
-        Utils.debug_print(f"[DEBUG] chunk_diff: Total file_paths: {file_paths}")
-        Utils.debug_print(f"[DEBUG] chunk_diff: Total documents: {len(documents)}")
         
         return documents, file_paths

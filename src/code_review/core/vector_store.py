@@ -1,4 +1,3 @@
-from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import LlamaCppEmbeddings
 import streamlit as st
 import numpy as np
@@ -7,7 +6,7 @@ import os
 from typing import List, Dict
 
 from .utils import Utils
-from src.code_review.core.chunkers import get_context_chunker, get_diff_chunker
+from src.code_review.core.chunkers import get_diff_chunker
 
 # Cache for embedding model
 _cached_embeddings = None
@@ -17,7 +16,6 @@ def chunk_diff(diff_text: str):
 
 @st.cache_resource
 def load_embedding_model():
-    """Load and cache the embedding model instance."""
     global _cached_embeddings
     if _cached_embeddings is not None:
         return _cached_embeddings
@@ -47,21 +45,6 @@ def load_embedding_model():
         return _cached_embeddings
     except Exception as e:
         Utils.debug_print(f"Failed to load GGUF embedding model: {e}")
-        return None
-
-def build_vector_store(documents):
-    if not documents:
-        return None
-
-    embeddings = load_embedding_model()
-    if embeddings is None:
-        Utils.debug_print("No embedding model available. Vector store disabled.")
-        return None
-
-    try:
-        return FAISS.from_documents(documents, embeddings)
-    except Exception as e:
-        Utils.debug_print(f"Failed to build vector store: {e}")
         return None
 
 def search_best_practices_by_embedding(query_embedding, top_n=3, best_practices_path=None):
@@ -97,7 +80,6 @@ def search_best_practices_by_embedding(query_embedding, top_n=3, best_practices_
     return results[:top_n]
 
 def embed_text(text: str) -> List[float]:
-    """Embed a single text string using the loaded embedding model."""
     embeddings = load_embedding_model()
     if embeddings is None:
         return []
@@ -117,40 +99,28 @@ def get_relevant_best_practices_for_chunk(chunk_content: str, max_top_n: int = 3
     if not chunk_embedding:
         Utils.debug_print("get_relevant_best_practices_for_chunk: Failed to embed chunk content")
         return []
-    
-    Utils.debug_print(f"get_relevant_best_practices_for_chunk: Successfully embedded chunk content (length: {len(chunk_embedding)})")
-    
-    # Get top candidates (more than we need)
+
     candidates = search_best_practices_by_embedding(chunk_embedding, top_n=max_top_n + 2)
-    
-    Utils.debug_print(f"get_relevant_best_practices_for_chunk: Found {len(candidates)} candidates")
-    
+
     if not candidates:
         Utils.debug_print("get_relevant_best_practices_for_chunk: No candidates found")
         return []
-    
-    # Get highest similarity score
+
     highest_similarity = candidates[0]['similarity']
-    Utils.debug_print(f"get_relevant_best_practices_for_chunk: Highest similarity: {highest_similarity}")
-    
-    # Adaptive selection based on similarity
+
     if highest_similarity < 0.3:
         # Low relevance: return only top 1 if similarity is reasonable
         if highest_similarity >= 0.1:
-            Utils.debug_print(f"get_relevant_best_practices_for_chunk: Low relevance ({highest_similarity}), returning top 1")
             return candidates[:1]
         else:
-            Utils.debug_print(f"get_relevant_best_practices_for_chunk: Too low relevance ({highest_similarity}), returning empty")
             return []  # Too low relevance, don't inject anything
     
     elif highest_similarity >= 0.6:
         # High relevance: return up to max_top_n
-        Utils.debug_print(f"get_relevant_best_practices_for_chunk: High relevance ({highest_similarity}), returning top {max_top_n}")
         return candidates[:max_top_n]
     
     else:
         # Medium relevance (0.3-0.6): return up to 2
-        Utils.debug_print(f"get_relevant_best_practices_for_chunk: Medium relevance ({highest_similarity}), returning top 2")
         return candidates[:2]
 
 def format_best_practices_for_prompt(best_practices: List[Dict]) -> str:
