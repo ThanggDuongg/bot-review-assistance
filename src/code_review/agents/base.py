@@ -119,6 +119,17 @@ def load_local_llm(instance_name="default"):
 
 @st.cache_resource
 def load_ollama_llm(instance_name: str = "default"):
+    import certifi
+    import ssl
+    # Set certificate paths
+    os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
+    os.environ['SSL_CERT_FILE'] = certifi.where()
+    os.environ['CURL_CA_BUNDLE'] = certifi.where()
+
+    # Disable SSL verification globally (temporary fix)
+    ssl._create_default_https_context = ssl._create_unverified_context
+
+
     global _cached_llms
     base_url = os.getenv("AI_URL", "")
     model = os.getenv("API_MODEL", "codellama:7b")
@@ -127,8 +138,11 @@ def load_ollama_llm(instance_name: str = "default"):
         return _cached_llms[cache_key]
     try:
         from langchain_ollama import ChatOllama
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+        ssl._create_default_https_context = lambda: ssl_context
 
         config = get_ollama_config()
+
         llm_instance = ChatOllama(
             base_url=base_url,
             model=model,
@@ -143,41 +157,6 @@ def load_ollama_llm(instance_name: str = "default"):
 @st.cache_resource
 def load_azure_openai_llm(instance_name: str = "default"):
     raise RuntimeError(f"Not Supported")
-    # global _cached_llms
-    # cache_key = f"azure_openai::{instance_name}"
-    # if cache_key in _cached_llms:
-    #     return _cached_llms[cache_key]
-    #
-    # try:
-    #     from langchain_openai import AzureChatOpenAI
-    #
-    #     azure_deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-35-turbo")
-    #     api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2023-06-01-preview")
-    #     azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
-    #     azure_api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
-    #
-    #     if not azure_endpoint or not azure_api_key:
-    #         raise ValueError("AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY must be set")
-    #
-    #     config = get_azure_openai_config()
-    #
-    #     llm_instance = AzureChatOpenAI(
-    #         azure_deployment=azure_deployment,
-    #         api_version=api_version,
-    #         azure_endpoint=azure_endpoint,
-    #         api_key=azure_api_key,
-    #         **config
-    #     )
-    #
-    #     _cached_llms[cache_key] = llm_instance
-    #     Utils.debug_print(f"Loaded and cached Azure OpenAI LLM instance '{cache_key}'")
-    #     return llm_instance
-    #
-    # except ImportError:
-    #     raise ImportError("langchain-openai not installed. Run: pip install langchain-openai")
-    # except Exception as e:
-    #     raise RuntimeError(f"Failed to load Azure OpenAI LLM instance '{cache_key}': {str(e)}")
-
 
 class BaseAgent(ABC):
     """Base class for all code review agents."""

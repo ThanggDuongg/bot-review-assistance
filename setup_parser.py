@@ -6,24 +6,8 @@ import shutil
 import stat
 
 GRAMMARS = {
-    'javascript': {
-        'repo': 'https://github.com/tree-sitter/tree-sitter-javascript',
-        'path': [''],
-    },
-    'typescript': {
-        'repo': 'https://github.com/tree-sitter/tree-sitter-typescript',
-        'path': ['typescript', 'tsx'],
-    },
     'c_sharp': {
         'repo': 'https://github.com/tree-sitter/tree-sitter-c-sharp',
-        'path': [''],
-    },
-    'html': {
-      'repo': 'https://github.com/tree-sitter/tree-sitter-html',
-      'path': [''],
-    },
-    'angular': {
-        'repo': 'https://github.com/dlvandenberg/tree-sitter-angular',
         'path': [''],
     }
 }
@@ -113,8 +97,6 @@ def remove_readonly(func, path, excinfo):
     func(path)
 
 def main():
-    # check_requirements()
-
     if os.path.exists(LANG_SO_PATH):
         print(f"Already have parser: {LANG_SO_PATH}")
         return
@@ -122,7 +104,6 @@ def main():
     lang_dirs = clone_and_generate()
     build_library(lang_dirs)
 
-    # Xóa thư mục tạm sau khi build xong
     if os.path.exists(TMP_GRAMMAR_DIR):
         print(f"Remove tmp grammar dir: {TMP_GRAMMAR_DIR}")
         shutil.rmtree(TMP_GRAMMAR_DIR, onerror=remove_readonly)

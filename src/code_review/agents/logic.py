@@ -248,12 +248,6 @@ class LogicAgent(BaseAgent):
                     "explain_suggest_code": "",
                     "matched_best_practices_and_severities": [],
                 }
-
-            if feedback.get('suggest_code'):
-                feedback['suggest_code'] = Utils.ensure_markdown_codeblock(
-                    feedback['suggest_code'], 
-                    Utils.detect_code_type(file_path)
-                )
             
             normalized.append({line_num: feedback})
         

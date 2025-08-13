@@ -4,7 +4,7 @@ from typing import List, Tuple
 from langchain_core.documents import Document
 from ..agents import LogicAgent, SummaryAgent
 from ..core.schemas import ReviewState, RepoInfo
-from ..core.tools import FileFetcher, MockFileFetcher
+from ..core.tools import FileFetcher
 from ..core.vector_store import chunk_diff
 from ..core.chunkers.chunker_factory import get_context_chunker
 from ..core.utils import Utils
@@ -12,7 +12,6 @@ from ..core.utils import Utils
 summary_agent = SummaryAgent()
 logic_agent = LogicAgent()
 file_fetcher = FileFetcher()
-mock_file_fetcher = MockFileFetcher()
 
 def validate_repo_info(repo_info: RepoInfo) -> bool:
     if not repo_info:
@@ -91,16 +90,11 @@ def fetch_files_node(state: ReviewState) -> dict:
             Utils.debug_print("[fetch_files_node] No files need content fetching, returning empty file_contents")
             return {"file_contents": {}}
 
-        env = os.getenv('ENVIRONMENT', 'prod')
-        if env != 'dev' and not validate_repo_info(repo_info):
+        if validate_repo_info(repo_info):
             Utils.debug_print("[fetch_files_node] Invalid repo_info, skipping file fetching")
             return {"file_contents": {}}
-        if env == 'dev':
-            fetcher = mock_file_fetcher
-            Utils.debug_print("Pipeline: Using MockFileFetcher (dev mode)")
-        else:
-            fetcher = file_fetcher
-            Utils.debug_print("Pipeline: Using real FileFetcher")
+
+        fetcher = file_fetcher
         Utils.debug_print(f"Pipeline: Fetching {len(files_to_fetch)} files from {repo_info.get('project','?')}/{repo_info.get('repo','?')}...")
         file_contents = fetcher.fetch_files_parallel(files_to_fetch, repo_info)
         Utils.debug_print(f"Pipeline: Successfully fetched {len(file_contents)} files")
@@ -195,10 +189,3 @@ def review_branch_node(state: ReviewState) -> dict:
             "total_chunks_reviewed": 0,
             "error": f"Review failed: {str(e)}"
         }}
-
-def combine_results_node(state: ReviewState) -> dict:
-    """Flatten summary and review results into a single flat dict."""
-    return {
-        **state.get("summary_result", {}).get("summary", {}),
-        **state.get("review_result", {})
-    }

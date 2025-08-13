@@ -141,22 +141,9 @@ class Utils:
     @staticmethod
     def is_valid_code_file(file_path: str) -> bool:
         code_extensions = {
-            'js', 'ts', 'jsx', 'tsx', 'cs'
+            'cs'
         }
         return Utils.extract_file_extension(file_path).lower() in code_extensions
-    
-    @staticmethod
-    def get_file_language_category(file_path: str) -> str:
-        extension = Utils.extract_file_extension(file_path).lower()
-        
-        if extension in {'js', 'ts', 'jsx', 'tsx', 'html', 'css', 'scss'}:
-            return "frontend"
-        elif extension in {'cs'}:
-            return "backend"
-        elif extension in {'json', 'yml', 'yaml', 'xml', 'toml', 'ini'}:
-            return "config"
-        else:
-            return "other"
     
     @staticmethod
     def calculate_content_size(content: str) -> int:
@@ -176,27 +163,18 @@ class Utils:
         ext = Utils.extract_file_extension(file_path).lower()
         if ext == 'cs':
             return 'csharp'
-        if ext in {'tsx', 'jsx'}:
-            return 'react'
-        if ext == 'js':
-            return 'javascript'
-        if ext == 'ts':
-            if any(file_path.endswith(suffix) for suffix in [
-                '.component.ts', '.service.ts', '.module.ts', 
-                '.directive.ts', '.pipe.ts', '.guard.ts'
-            ]):
-                return 'angular'
-            return 'typescript'
-        return 'unknown' 
-
-    @staticmethod
-    def ensure_markdown_codeblock(code, lang='csharp'):
-        if not code:
-            return ''
-        code = code.strip()
-        if code.startswith('```'):
-            return code
-        return f'```{lang}\n{code}\n```'
+        # if ext in {'tsx', 'jsx'}:
+        #     return 'react'
+        # if ext == 'js':
+        #     return 'javascript'
+        # if ext == 'ts':
+        #     if any(file_path.endswith(suffix) for suffix in [
+        #         '.component.ts', '.service.ts', '.module.ts',
+        #         '.directive.ts', '.pipe.ts', '.guard.ts'
+        #     ]):
+        #         return 'angular'
+        #     return 'typescript'
+        return 'unknown'
     
     @staticmethod
     def get_optimal_thread_count(default_threads: int = 8) -> int:
@@ -291,7 +269,3 @@ class Utils:
         except Exception as e:
             Utils.debug_print(f"No Intel/OpenCL GPU detected or clinfo not available: {e}")
         return 0
-
-    @staticmethod
-    def count_total_lines(chunks) -> int:
-        return sum(len(chunk.page_content.split('\n')) for chunk in chunks)

@@ -64,28 +64,8 @@ def build_vector_store(documents):
         Utils.debug_print(f"Failed to build vector store: {e}")
         return None
 
-def search_similar_code(vector_store, query, k=3):
-    if vector_store is None:
-        return []
-    
-    try:
-        return vector_store.similarity_search(query, k=k)
-    except Exception as e:
-        Utils.debug_print(f"Vector search failed: {e}")
-        return []
-
 def search_best_practices_by_embedding(query_embedding, top_n=3, best_practices_path=None):
-    """
-    Search best practices by embedding similarity.
-    Args:
-        query_embedding (list[float]): The embedding vector to compare.
-        top_n (int): Number of top results to return.
-        best_practices_path (str): Path to best_practices.json. Defaults to '../data/best_practices.json' relative to project root.
-    Returns:
-        List of dicts: Each dict contains best practice metadata and similarity score.
-    """
     if best_practices_path is None:
-        # Try both relative to cwd and project root
         candidates = [
             os.path.join('data', 'best_practices.json'),
             os.path.join(os.path.dirname(__file__), '../../../data/best_practices.json'),
@@ -128,19 +108,6 @@ def embed_text(text: str) -> List[float]:
         return []
 
 def get_relevant_best_practices_for_chunk(chunk_content: str, max_top_n: int = 3) -> List[Dict]:
-    """
-    Get relevant best practices for a chunk with adaptive selection.
-    
-    Args:
-        chunk_content: The content of the chunk to analyze
-        max_top_n: Maximum number of best practices to return (default: 3)
-    
-    Returns:
-        List of best practices, adaptively selected based on similarity:
-        - If highest similarity < 0.6: return top 1 (if any)
-        - If highest similarity >= 0.8: return up to max_top_n
-        - If highest similarity 0.6-0.8: return up to 2
-    """
     if not chunk_content.strip():
         Utils.debug_print("get_relevant_best_practices_for_chunk: Empty chunk content")
         return []
@@ -187,15 +154,6 @@ def get_relevant_best_practices_for_chunk(chunk_content: str, max_top_n: int = 3
         return candidates[:2]
 
 def format_best_practices_for_prompt(best_practices: List[Dict]) -> str:
-    """
-    Format best practices list into text for LLM prompt.
-    
-    Args:
-        best_practices: List of best practice dictionaries
-    
-    Returns:
-        Formatted string for prompt injection
-    """
     if not best_practices:
         return "No specific best practices identified for this code section. Focus on general code quality, performance, and security issues."
     
