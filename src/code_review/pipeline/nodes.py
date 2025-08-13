@@ -90,7 +90,7 @@ def fetch_files_node(state: ReviewState) -> dict:
             Utils.debug_print("[fetch_files_node] No files need content fetching, returning empty file_contents")
             return {"file_contents": {}}
 
-        if validate_repo_info(repo_info):
+        if not validate_repo_info(repo_info):
             Utils.debug_print("[fetch_files_node] Invalid repo_info, skipping file fetching")
             return {"file_contents": {}}
 

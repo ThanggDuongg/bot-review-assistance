@@ -25,7 +25,7 @@ def build_review_graph():
     graph.set_entry_point("chunk_node")
     
     # After chunking, run summary and fetch+review in parallel
-    # graph.add_edge("chunk_node", "summary_branch_node")
+    graph.add_edge("chunk_node", "summary_branch_node")
     graph.add_edge("chunk_node", "fetch_files_node")
     
     # Sequential: fetch files -> create AST chunks -> review
@@ -33,7 +33,7 @@ def build_review_graph():
     graph.add_edge("create_ast_chunks_node", "review_branch_node")
     
     # Finish: both summary_branch_node and review_branch_node are finish points
-    # graph.set_finish_point("summary_branch_node")
+    graph.set_finish_point("summary_branch_node")
     graph.set_finish_point("review_branch_node")
 
     return graph.compile()
