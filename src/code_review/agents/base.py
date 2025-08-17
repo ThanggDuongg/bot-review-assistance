@@ -3,6 +3,8 @@ from abc import ABC, abstractmethod
 from typing import Optional, Any
 from langchain_core.messages import SystemMessage, HumanMessage
 import streamlit as st
+from langfuse import Langfuse
+from langfuse.callback import CallbackHandler
 
 from src.code_review.agents import APIClient
 from src.code_review.core import Utils
@@ -117,6 +119,11 @@ def load_local_llm(instance_name="default"):
     except Exception as e:
         raise RuntimeError(f"Failed to load LLM model instance '{instance_name}': {str(e)}")
 
+langfuse_handler = CallbackHandler(
+    public_key="",
+    secret_key="",
+    host="http://localhost:3000"
+)
 @st.cache_resource
 def load_ollama_llm(instance_name: str = "default"):
     global _cached_llms
@@ -132,7 +139,8 @@ def load_ollama_llm(instance_name: str = "default"):
         llm_instance = ChatOllama(
             base_url=base_url,
             model=model,
-            **config
+            **config,
+            callbacks=[langfuse_handler]
         )
         _cached_llms[cache_key] = llm_instance
         Utils.debug_print(f"Loaded and cached Ollama LLM instance '{cache_key}'")
